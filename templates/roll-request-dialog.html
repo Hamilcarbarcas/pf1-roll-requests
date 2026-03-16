@@ -1,0 +1,68 @@
+<div class="dialog-content">
+    <div class="arr-dialog-layout flexrow">
+        <!-- Left Panel: Settings -->
+        <div class="arr-settings flexcol">
+            <!-- Check Mode -->
+            <fieldset class="arr-fieldset">
+                <legend>Check Mode</legend>
+                <label class="arr-radio-label">
+                    <input type="radio" name="checkMode" value="single" {{#if (eq checkMode "single")}}checked{{/if}} />
+                    Single Check
+                </label>
+                <label class="arr-radio-label">
+                    <input type="radio" name="checkMode" value="multi" {{#if (eq checkMode "multi")}}checked{{/if}} />
+                    Multi-Check
+                </label>
+            </fieldset>
+
+            <!-- DC -->
+            <div class="form-group">
+                <label for="arr-dc">DC</label>
+                <div class="flexrow" style="gap: 8px; align-items: center;">
+                    <input type="number" step="any" id="arr-dc" value="{{dc}}" style="flex: 0 0 60px; text-align: right;" />
+                    <label style="flex: 0 0 auto; margin: 0;">Show</label>
+                    <input type="checkbox" id="arr-show-dc" {{checked showDC}} style="flex: 0 0 auto;" />
+                </div>
+            </div>
+
+            <!-- Roll Mode -->
+            <div class="form-group">
+                <label for="arr-rollmode">Roll Mode</label>
+                <select id="arr-rollmode">
+                    <option value="roll|hidden" {{#if (eq rollModeOption "roll|hidden")}}selected{{/if}}>Public Roll, Results Hidden</option>
+                    <option value="roll|show" {{#if (eq rollModeOption "roll|show")}}selected{{/if}}>Public Roll</option>
+                    <option value="gmroll|hidden" {{#if (eq rollModeOption "gmroll|hidden")}}selected{{/if}}>Private GM Roll, Results Hidden</option>
+                    <option value="gmroll|show" {{#if (eq rollModeOption "gmroll|show")}}selected{{/if}}>Private GM Roll</option>
+                    <option value="blindroll" {{#if (eq rollModeOption "blindroll")}}selected{{/if}}>Blind GM Roll</option>
+                </select>
+            </div>
+
+            <!-- Flavor -->
+            <div class="form-group">
+                <label for="arr-flavor">Flavor Text</label>
+                <input type="text" id="arr-flavor" value="{{flavor}}" placeholder="Optional flavor text..." />
+            </div>
+
+            <!-- Aid Another -->
+            <div class="form-group">
+                <label style="flex: 0 0 auto;">Aid Another</label>
+                <input type="checkbox" id="arr-include-aid" {{checked includeAid}} style="flex: 0 0 auto;" />
+            </div>
+        </div>
+
+        <!-- Right Panel: Request Options Grid -->
+        <div class="arr-options-panel">
+            {{#each optionGroups}}
+            <div class="arr-option-header">{{this.text}}</div>
+            <div class="arr-option-grid">
+                {{#each this.groups as |label key|}}
+                <div class="request-option{{#if (and @root.selectedRequest (eq @root.selectedRequest.key key))}} selected{{/if}}"
+                     data-type="{{../id}}" data-key="{{key}}" data-action="selectOption">
+                    {{label}}
+                </div>
+                {{/each}}
+            </div>
+            {{/each}}
+        </div>
+    </div>
+</div>

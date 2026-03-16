@@ -1,0 +1,413 @@
+/* ============================================================
+   Pathfinder 1e Roll Requests — Styles
+   ============================================================ */
+
+/* ---- Dialog Layout ---- */
+
+.pf1-roll-requests.roll-request-dialog {
+  min-height: 400px;
+}
+
+.arr-dialog-layout {
+  gap: 12px;
+  height: 100%;
+  align-items: flex-start;
+}
+
+.arr-settings {
+  flex: 0 0 220px;
+  padding-right: 12px;
+  border-right: 1px solid #999;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.arr-fieldset {
+  border: 1px solid #999;
+  border-radius: 3px;
+  padding: 4px 8px;
+  margin: 0;
+}
+
+.arr-fieldset legend {
+  font-weight: bold;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.arr-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.arr-radio-label input[type="radio"] {
+  margin: 0;
+}
+
+/* ---- Request Option Grid ---- */
+
+.arr-options-panel {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  line-height: 17px;
+}
+
+.arr-option-header {
+  font-weight: bold;
+  font-size: 15px;
+  padding: 4px 0 2px;
+  border-bottom: 1px solid #aaa;
+  margin-bottom: 2px;
+  color: #fff;
+}
+
+.arr-option-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.arr-option-grid .request-option {
+  padding: 3px 6px;
+  text-align: left;
+  font-size: 11px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.05);
+  transition: all 0.15s;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arr-option-grid .request-option:hover {
+  border-color: #ff6400;
+  box-shadow: 0 0 6px rgba(255, 100, 0, 0.4);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.arr-option-grid .request-option.selected {
+  border-color: red;
+  border-bottom-color: #ff6400;
+  box-shadow: 0 0 10px #ff6400;
+  background: rgba(255, 255, 255, 0.3);
+  font-weight: bold;
+}
+
+/* ============================================================
+   Chat Card Styles
+   ============================================================ */
+
+.arr-card {
+  font-style: normal;
+  font-size: 12px;
+}
+
+/* ---- Header ---- */
+
+.arr-card-header {
+  padding: 3px 0;
+  border-top: 2px groove #fff;
+  border-bottom: 2px groove #fff;
+  align-items: center;
+}
+
+.arr-card-header .arr-card-title {
+  flex: 2;
+  margin: 0;
+  line-height: 36px;
+  font-family: "Modesto Condensed", "Palatino Linotype", serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: #4b4a44;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.arr-card-header .arr-dc-display {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 14px;
+  color: #4b4a44;
+  text-align: right;
+  border-bottom: 0;
+}
+
+/* ---- Flavor ---- */
+
+.arr-flavor {
+  font-style: italic;
+  color: #666;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+/* ---- Section Headers ---- */
+
+.arr-section-header {
+  font-weight: bold;
+  font-size: 13px;
+  padding: 4px 0 2px;
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 4px;
+  color: #4b4a44;
+}
+
+/* ---- Divider ---- */
+
+.arr-divider {
+  border: none;
+  border-top: 1px solid #ccc;
+  margin: 6px 0;
+}
+
+/* ---- Roll Prompt ---- */
+
+.arr-roll-prompt {
+  align-items: center;
+  padding: 4px 0;
+  gap: 8px;
+}
+
+.arr-prompt-text {
+  flex: 1;
+  font-size: 12px;
+  color: #333;
+}
+
+.arr-aid-bonus-display {
+  color: #468847;
+  font-weight: bold;
+}
+
+/* ---- D20 Roll Button (Monk's style) ---- */
+
+.arr-roll-btn {
+  display: block;
+  width: 32px;
+  height: 48px;
+  flex: 0 0 32px;
+  cursor: pointer;
+  position: relative;
+}
+
+.arr-d20-icon {
+  width: 32px;
+  height: 32px;
+  opacity: 0.7;
+  transform: rotate(180deg);
+  transition: all 0.15s;
+  margin-top: 8px;
+  filter: brightness(0);
+}
+
+.arr-roll-btn:hover .arr-d20-icon {
+  opacity: 1;
+  transform: none;
+  filter: brightness(0.5) sepia(1) saturate(5) hue-rotate(-10deg);
+}
+
+/* ---- Results List ---- */
+
+.arr-results-list {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+
+.arr-result-entry {
+  padding: 4px 0;
+  border-bottom: 1px solid #eee;
+  flex-direction: column;
+}
+
+.arr-result-entry:last-child {
+  border-bottom: none;
+}
+
+.arr-result-row {
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.arr-result-row:hover .arr-actor-name {
+  text-decoration: underline;
+}
+
+.arr-result-actor {
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.arr-actor-img {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 3px;
+  border: 1px solid #999;
+  object-fit: contain;
+  background: #0001;
+}
+
+.arr-actor-name {
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.arr-result-total {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.arr-total-value {
+  min-width: 24px;
+  text-align: right;
+}
+
+/* Pass / Fail Colors */
+
+.arr-pass .arr-total-value {
+  color: #468847;
+}
+
+.arr-pass-icon {
+  color: #468847;
+}
+
+.arr-fail .arr-total-value {
+  color: #b94a48;
+}
+
+.arr-fail-icon {
+  color: #b94a48;
+}
+
+/* Aid Bonus */
+
+.arr-aid-bonus {
+  font-size: 12px;
+  font-weight: normal;
+  margin-left: 4px;
+}
+
+.arr-aid-entry.arr-result-entry .arr-aid-bonus {
+  color: #468847;
+}
+
+.arr-aid-entry.arr-result-entry .arr-fail .arr-aid-bonus {
+  color: #b94a48;
+}
+
+/* ---- Effect Notes / Footnotes ---- */
+
+.arr-notes {
+  padding: 2px 0 2px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* ---- Collapsible Roll Details ---- */
+
+.arr-roll-details {
+  display: none;
+  padding: 2px 0 2px 34px;
+  width: 100%;
+}
+
+.arr-result-entry.arr-expanded .arr-roll-details {
+  display: block;
+}
+
+.arr-roll-details .dice-roll {
+  width: 100%;
+  cursor: default;
+}
+
+.arr-roll-details .dice-roll .dice-tooltip {
+  display: grid !important;
+  grid-template-rows: 1fr !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  max-height: none !important;
+  position: relative !important;
+}
+
+.arr-roll-details .dice-roll .dice-tooltip > .wrapper {
+  overflow: visible !important;
+}
+
+.arr-roll-details .dice-roll .dice-total {
+  display: none;
+}
+
+.arr-roll-details .dice-roll .dice-formula {
+  font-size: 11px;
+  line-height: 20px;
+}
+
+/* ---- Expand Icon ---- */
+
+.arr-expand-icon {
+  font-size: 10px;
+  color: #999;
+  margin-left: 4px;
+  transition: transform 0.15s;
+}
+
+.arr-note-tag {
+  display: inline-block;
+  border-radius: 2px;
+  border: 1px solid #808080;
+  background-color: #c0c0c0;
+  color: #7a7971;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* ---- Footer ---- */
+
+.arr-card-footer {
+  padding: 3px 0 0;
+  border-top: 2px groove #fff;
+  font-size: 10px;
+  color: #666;
+}
+
+.arr-mode-label {
+  font-style: italic;
+}
+
+/* ---- GM-only visibility ---- */
+/* .gm-only elements are removed from DOM for non-GMs in JS */
+
+/* ---- Primary result container ---- */
+
+.arr-primary-result {
+  list-style: none;
+  padding: 4px 0;
+}
+
+.arr-primary-result:empty {
+  display: none;
+}

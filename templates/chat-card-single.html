@@ -1,0 +1,61 @@
+<!-- ============================================================
+     Single-Check Chat Card
+     Two sections: Roll Check (the main roll) and Aid Another.
+     ============================================================ -->
+<div class="pf1-roll-requests chat-card arr-card" data-mode="single">
+    <header class="arr-card-header flexrow">
+        <h3 class="arr-card-title">{{{name}}}</h3>
+        {{#if dc}}
+        <h3 class="arr-dc-display {{#unless showDC}}gm-only{{/unless}}">DC: {{dc}}</h3>
+        {{/if}}
+    </header>
+
+    {{#if flavor}}
+    <div class="arr-flavor">{{flavor}}</div>
+    {{/if}}
+
+    <div class="arr-card-body">
+        <!-- Roll Check Section -->
+        <div class="arr-roll-section arr-primary-roll">
+            <div class="arr-section-header">Roll Check</div>
+            <div class="arr-roll-prompt flexrow">
+                <span class="arr-prompt-text">
+                    Roll {{requestName}}
+                    {{#if includeAid}}
+                    <span class="arr-aid-bonus-display" style="display:none;">
+                        (Aid: <strong class="arr-aid-bonus-value">+0</strong>)
+                    </span>
+                    {{/if}}
+                </span>
+                <a class="arr-roll-btn" data-action="rollPrimary" title="Roll Check">
+                    <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
+                </a>
+            </div>
+            <!-- Primary roll result appears here -->
+            <ol class="arr-primary-result arr-results-list"></ol>
+        </div>
+
+        {{#if includeAid}}
+        <hr class="arr-divider" />
+
+        <!-- Aid Another Section -->
+        <div class="arr-roll-section arr-aid-section">
+            <div class="arr-section-header">Aid Another</div>
+            <div class="arr-roll-prompt flexrow">
+                <span class="arr-prompt-text">Roll to assist (DC 10)</span>
+                <a class="arr-roll-btn" data-action="rollAid" title="Aid Another">
+                    <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
+                </a>
+            </div>
+            <!-- Aid roll results appear here -->
+            <ol class="arr-results-list arr-aid-results">
+                {{! Aid results injected dynamically }}
+            </ol>
+        </div>
+        {{/if}}
+    </div>
+
+    <footer class="arr-card-footer gm-only">
+        <span class="arr-mode-label">{{modeName}}</span>
+    </footer>
+</div>

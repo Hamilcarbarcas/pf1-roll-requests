@@ -1,0 +1,34 @@
+{
+  "id": "pf1-roll-requests",
+  "title": "Pathfinder 1e Roll Requests",
+  "description": "A roll request system for PF1e that supports single-check (with Aid Another) and multi-check modes.",
+  "version": "1.0.0",
+  "authors": [
+    {
+      "name": "Patrick"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "pf1",
+        "type": "system",
+        "compatibility": {
+          "minimum": "11.10",
+          "verified": "11.10"
+        }
+      }
+    ]
+  },
+  "esmodules": [
+    "module/main.mjs"
+  ],
+  "styles": [
+    "styles/roll-requests.css"
+  ],
+  "socket": true
+}

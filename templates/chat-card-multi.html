@@ -1,0 +1,37 @@
+<!-- ============================================================
+     Multi-Check Chat Card
+     Anyone can click Roll to roll their selected token's check.
+     ============================================================ -->
+<div class="pf1-roll-requests chat-card arr-card" data-mode="multi">
+    <header class="arr-card-header flexrow">
+        <h3 class="arr-card-title">{{{name}}}</h3>
+        {{#if dc}}
+        <h3 class="arr-dc-display {{#unless showDC}}gm-only{{/unless}}">DC: {{dc}}</h3>
+        {{/if}}
+    </header>
+
+    {{#if flavor}}
+    <div class="arr-flavor">{{flavor}}</div>
+    {{/if}}
+
+    <div class="arr-card-body">
+        <!-- The Roll button — anyone can click -->
+        <div class="arr-roll-section arr-multi-roll">
+            <div class="arr-roll-prompt flexrow">
+                <span class="arr-prompt-text">Click to roll {{requestName}}</span>
+                <a class="arr-roll-btn" data-action="roll" title="Roll">
+                    <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
+                </a>
+            </div>
+        </div>
+
+        <!-- Roll results appear here -->
+        <ol class="arr-results-list">
+            {{! Results are injected dynamically }}
+        </ol>
+    </div>
+
+    <footer class="arr-card-footer gm-only">
+        <span class="arr-mode-label">{{modeName}}</span>
+    </footer>
+</div>
