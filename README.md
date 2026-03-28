@@ -8,6 +8,11 @@ A Foundry VTT module for the PF1e system that lets the GM request rolls from pla
 - PF1e system v11.10+
 
 ## Features
+![Request window](assets/request-roll-window.png)
+
+![Chat Message](assets/request-roll-chat-message-blank.png)
+
+![Chat Message Filled](assets/request-roll-chat-message-completed.png)
 
 ### Roll Request Dialog
 
