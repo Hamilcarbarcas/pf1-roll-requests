@@ -2,6 +2,8 @@
 
 A Foundry VTT module for the PF1e system that lets the GM request rolls from players via interactive chat cards.
 
+**Manifest URL:** `https://github.com/Hamilcarbarcas/pf1-roll-requests/releases/latest/download/module.json`
+
 ## Requirements
 
 - Foundry VTT v13+
