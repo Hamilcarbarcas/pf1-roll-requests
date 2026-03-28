@@ -1,4 +1,4 @@
-# Pathfinder 1e Roll Requests
+# PF1e Roll Requests
 
 A Foundry VTT module for the PF1e system that lets the GM request rolls from players via interactive chat cards.
 
