@@ -11,6 +11,17 @@ const MODULE_ID = "pf1-roll-requests";
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing Pathfinder 1e Roll Requests`);
   game.pf1RollRequests = { MODULE_ID };
+
+  // Setting to toggle the token-control-bar button
+  game.settings.register(MODULE_ID, "show-button", {
+    name: "Show Token Control Button",
+    hint: "Toggle the Roll Request button in the token controls bar.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+    requiresReload: true,
+  });
 });
 
 Hooks.once("ready", () => {
@@ -23,9 +34,11 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
   RollRequestChat.onRenderChatMessage(message, html, data);
 });
 
-// ---- Register a scene-control button or macro-friendly API ----
+// ---- Register a scene-control button ----
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user.isGM) return;
+  if (!game.settings.get(MODULE_ID, "show-button")) return;
+
   const tokenControls = controls.tokens ?? controls.find?.(c => c.name === "token");
   if (tokenControls) {
     tokenControls.tools["pf1-roll-request"] = {
