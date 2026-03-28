@@ -1,6 +1,6 @@
 {
   "id": "pf1-roll-requests",
-  "title": "Pathfinder 1e Roll Requests",
+  "title": "PF1e Roll Requests",
   "description": "A roll request system for PF1e that supports single-check (with Aid Another) and multi-check modes.",
   "version": "1.0.0",
   "authors": [
