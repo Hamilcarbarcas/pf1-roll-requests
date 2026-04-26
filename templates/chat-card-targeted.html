@@ -1,0 +1,56 @@
+<div class="pf1-roll-requests chat-card arr-card" data-mode="targeted">
+    <header class="arr-card-header flexrow">
+        <h3 class="arr-card-title">{{{name}}}</h3>
+        {{#if dc}}
+        <h3 class="arr-dc-display {{#unless showDC}}gm-only{{/unless}}">DC: {{dc}}</h3>
+        {{/if}}
+    </header>
+
+    {{#if flavor}}
+    <div class="arr-flavor">{{flavor}}</div>
+    {{/if}}
+
+    <div class="arr-card-body">
+        {{#each targetedActors}}
+        <div class="arr-targeted-block" data-actor-id="{{this.id}}">
+
+            <!-- Actor header row: portrait, name, aid-bonus, inline result, roll button -->
+            <div class="arr-targeted-actor-row flexrow">
+                <div class="arr-result-actor flexrow">
+                    <img class="arr-actor-img" src="{{this.img}}" alt="{{this.name}}" />
+                    <span class="arr-actor-name">{{this.name}}</span>
+                    {{#if @root.includeAid}}
+                    <span class="arr-aid-bonus-display" style="display:none;">
+                        (<strong class="arr-aid-bonus-value">+0</strong> Aid)
+                    </span>
+                    {{/if}}
+                </div>
+                <!-- Result injected here by JS once rolled (replaces roll button) -->
+                <div class="arr-inline-result arr-result-total" style="display:none;"></div>
+                <a class="arr-roll-btn" data-action="rollTargeted" data-actor-id="{{this.id}}" title="Roll Check">
+                    <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
+                </a>
+            </div>
+
+            {{#if @root.includeAid}}
+            <!-- Aid Another sub-section -->
+            <div class="arr-targeted-aid-section">
+                <div class="arr-roll-prompt flexrow arr-targeted-aid-prompt">
+                    <span class="arr-prompt-text">Aid Another (DC 10)</span>
+                    <a class="arr-roll-btn arr-roll-btn-sm" data-action="rollTargetedAid" data-target-actor-id="{{this.id}}" title="Aid Another">
+                        <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
+                    </a>
+                </div>
+                <ol class="arr-aid-results arr-results-list" data-target-actor-id="{{this.id}}"></ol>
+            </div>
+            {{/if}}
+
+        </div>
+        {{#unless @last}}<hr class="arr-divider" />{{/unless}}
+        {{/each}}
+    </div>
+
+    <footer class="arr-card-footer gm-only">
+        <span class="arr-mode-label">{{modeName}}</span>
+    </footer>
+</div>

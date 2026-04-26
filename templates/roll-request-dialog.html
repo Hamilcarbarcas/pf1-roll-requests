@@ -10,6 +10,10 @@
                     Single Check
                 </label>
                 <label class="arr-radio-label">
+                    <input type="radio" name="checkMode" value="selection" {{#if (eq checkMode "selection")}}checked{{/if}} />
+                    Selection Check
+                </label>
+                <label class="arr-radio-label">
                     <input type="radio" name="checkMode" value="multi" {{#if (eq checkMode "multi")}}checked{{/if}} />
                     Multi-Check
                 </label>
@@ -31,9 +35,9 @@
                 <select id="arr-rollmode">
                     <option value="roll|hidden" {{#if (eq rollModeOption "roll|hidden")}}selected{{/if}}>Public Roll, Results Hidden</option>
                     <option value="roll|show" {{#if (eq rollModeOption "roll|show")}}selected{{/if}}>Public Roll</option>
-                    <option value="gmroll|hidden" {{#if (eq rollModeOption "gmroll|hidden")}}selected{{/if}}>Private GM Roll, Results Hidden</option>
                     <option value="gmroll|show" {{#if (eq rollModeOption "gmroll|show")}}selected{{/if}}>Private GM Roll</option>
-                    <option value="blindroll" {{#if (eq rollModeOption "blindroll")}}selected{{/if}}>Blind GM Roll</option>
+                    <option value="publicblind|hidden" {{#if (eq rollModeOption "publicblind|hidden")}}selected{{/if}}>Blind Roll, Results Hidden</option>
+                    <option value="publicblind|show" {{#if (eq rollModeOption "publicblind|show")}}selected{{/if}}>Blind Roll</option>
                 </select>
             </div>
 
@@ -47,6 +51,22 @@
             <div class="form-group">
                 <label style="flex: 0 0 auto;">Aid Another</label>
                 <input type="checkbox" id="arr-include-aid" {{checked includeAid}} style="flex: 0 0 auto;" />
+            </div>
+
+            <!-- Prompt Actors (selection mode only) -->
+            <div class="arr-actor-selection" {{#unless (eq checkMode "selection")}}style="display:none;"{{/unless}}>
+                <label class="arr-actor-selection-label">Prompt Actors</label>
+                <div class="arr-actor-check-list">
+                    {{#each assignedActors}}
+                    <label class="arr-actor-check-label flexrow">
+                        <input type="checkbox" class="arr-actor-checkbox" data-actor-id="{{this.id}}" {{checked this.checked}} />
+                        <img src="{{this.img}}" class="arr-actor-check-img" alt="{{this.name}}" />
+                        <span class="arr-actor-check-name">{{this.name}}</span>
+                    </label>
+                    {{else}}
+                    <span class="arr-no-actors-msg">No player characters configured.</span>
+                    {{/each}}
+                </div>
             </div>
         </div>
 

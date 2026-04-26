@@ -18,6 +18,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     this.flavor = "";
     this.includeAid = true;        // Whether single-check mode includes Aid Another
     this.selectedRequest = null;   // { type, key, name }
+    this.targetedActors = [];      // [{ id, name, img }, ...] — actors to prompt individually
   }
 
   // ---- AppV2 Configuration ----
@@ -89,6 +90,17 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       { id: "dice", text: "Dice", groups: dice },
     ];
 
+    // Non-GM users with an assigned character — include offline players
+    const targetedSet = new Set(this.targetedActors.map(a => a.id));
+    const assignedActors = game.users
+      .filter(u => !u.isGM && u.character)
+      .map(u => ({
+        id: u.character.id,
+        name: u.character.name,
+        img: u.character.img,
+        checked: targetedSet.has(u.character.id),
+      }));
+
     return foundry.utils.mergeObject(context, {
       checkMode: this.checkMode,
       dc: this.dc,
@@ -100,6 +112,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       includeAid: this.includeAid,
       optionGroups,
       selectedRequest: this.selectedRequest,
+      assignedActors,
     });
   }
 
@@ -130,7 +143,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   // ---- Compute compound roll mode option value ----
 
   _getRollModeOption() {
-    if (this.rollMode === "roll" || this.rollMode === "gmroll") {
+    if (this.rollMode === "roll" || this.rollMode === "gmroll" || this.rollMode === "publicblind") {
       return this.showResults ? `${this.rollMode}|show` : `${this.rollMode}|hidden`;
     }
     return this.rollMode; // blindroll
@@ -141,11 +154,24 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   async _onRender(context, options) {
     await super._onRender(context, options);
 
-    // Bind form fields to instance properties
     const el = this.element;
+
+    // Actor selection visibility depends on checkMode
+    const actorSelectionEl = el.querySelector(".arr-actor-selection");
+    const syncActorSelectionVisibility = () => {
+      if (actorSelectionEl) {
+        actorSelectionEl.style.display = this.checkMode === "selection" ? "" : "none";
+      }
+    };
+
+    // Check mode radios — also toggle actor selection visibility
     el.querySelectorAll('input[name="checkMode"]').forEach(radio => {
-      radio.addEventListener("change", (e) => { this.checkMode = e.currentTarget.value; });
+      radio.addEventListener("change", (e) => {
+        this.checkMode = e.currentTarget.value;
+        syncActorSelectionVisibility();
+      });
     });
+
     el.querySelector("#arr-dc")?.addEventListener("blur", (e) => { this.dc = e.currentTarget.value; });
     el.querySelector("#arr-show-dc")?.addEventListener("change", (e) => { this.showDC = e.currentTarget.checked; });
     el.querySelector("#arr-rollmode")?.addEventListener("change", (e) => {
@@ -161,11 +187,26 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     });
     el.querySelector("#arr-flavor")?.addEventListener("blur", (e) => { this.flavor = e.currentTarget.value; });
     el.querySelector("#arr-include-aid")?.addEventListener("change", (e) => { this.includeAid = e.currentTarget.checked; });
+
+    // Actor checkboxes
+    el.querySelectorAll(".arr-actor-checkbox").forEach(cb => {
+      cb.addEventListener("change", (e) => {
+        const actorId = e.currentTarget.dataset.actorId;
+        if (e.currentTarget.checked) {
+          if (!this.targetedActors.find(a => a.id === actorId)) {
+            const actor = game.actors.get(actorId);
+            if (actor) this.targetedActors.push({ id: actorId, name: actor.name, img: actor.img });
+          }
+        } else {
+          this.targetedActors = this.targetedActors.filter(a => a.id !== actorId);
+        }
+      });
+    });
   }
 
   // ---- Actions ----
 
-  static #onSelectOption(event, target) {
+  static #onSelectOption(_event, target) {
     const type = target.dataset.type;
     const key = target.dataset.key;
     const name = target.textContent.trim();
@@ -177,7 +218,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     this.selectedRequest = { type, key, name };
   }
 
-  static #onRequestRoll(event, target) {
+  static #onRequestRoll(_event, _target) {
     if (!this.selectedRequest) {
       ui.notifications.warn("Please select a check type before requesting a roll.");
       return;
@@ -186,8 +227,17 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     // Force includeAid off for dice-type requests
     const includeAid = this.selectedRequest.type === "dice" ? false : this.includeAid;
 
+    // Selection Check requires at least one actor to be chosen
+    if (this.checkMode === "selection" && this.targetedActors.length === 0) {
+      ui.notifications.warn("Please select at least one actor to prompt.");
+      return;
+    }
+
+    const isTargeted = this.checkMode === "selection" && this.selectedRequest.type !== "dice";
+    const mode = isTargeted ? "targeted" : this.checkMode === "selection" ? "single" : this.checkMode;
+
     const requestData = {
-      mode: this.checkMode,
+      mode,
       dc: this.dc !== "" ? Number(this.dc) : null,
       showDC: this.showDC,
       showResults: this.showResults,
@@ -195,9 +245,14 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       flavor: this.flavor,
       includeAid,
       request: this.selectedRequest,
-      rolledActors: {},     // tokenId -> roll result data
-      aidResults: {},       // tokenId -> { total, bonus }
+      rolledActors: {},
+      aidResults: {},
       aidTotal: 0,
+      // Targeted mode data
+      targetedActors: isTargeted ? this.targetedActors : [],
+      actorResults: {},
+      actorAidResults: {},
+      usedActorIds: [],
     };
 
     // Import dynamically to avoid circular deps

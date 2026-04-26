@@ -411,3 +411,119 @@
 .arr-primary-result:empty {
   display: none;
 }
+
+/* ============================================================
+   Dialog — Actor Selection (Prompt Actors)
+   ============================================================ */
+
+.arr-actor-selection {
+  border-top: 1px solid #999;
+  padding-top: 6px;
+  margin-top: 2px;
+}
+
+.arr-actor-selection-label {
+  font-weight: bold;
+  font-size: 12px;
+  display: block;
+  margin-bottom: 4px;
+  color: #ccc;
+}
+
+.arr-actor-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.arr-actor-check-label {
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.arr-actor-check-label input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.arr-actor-check-img {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border-radius: 2px;
+  border: 1px solid #888;
+  object-fit: contain;
+}
+
+.arr-actor-check-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arr-no-actors-msg {
+  font-style: italic;
+  color: #888;
+  font-size: 11px;
+}
+
+/* ============================================================
+   Chat Card — Targeted Mode
+   ============================================================ */
+
+/* Each targeted actor's block */
+.arr-targeted-block {
+  padding: 4px 0;
+}
+
+/* Actor header row: portrait + name + optional aid bonus + roll button */
+.arr-targeted-actor-row {
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 4px;
+}
+
+.arr-targeted-actor-row .arr-result-actor {
+  flex: 1;
+  min-width: 0;
+}
+
+.arr-targeted-actor-row .arr-aid-bonus-display {
+  font-size: 11px;
+  color: #468847;
+  font-weight: bold;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+/* Aid sub-section within a targeted block */
+.arr-targeted-aid-section {
+  padding-left: 10px;
+  border-left: 3px solid #c0a060;
+  margin: 4px 0 4px 24px;
+}
+
+.arr-targeted-aid-prompt {
+  padding: 2px 0;
+}
+
+/* Smaller roll button variant used in aid rows */
+.arr-roll-btn-sm {
+  height: 36px;
+}
+
+.arr-roll-btn-sm .arr-d20-icon {
+  margin-top: 2px;
+  width: 28px;
+  height: 28px;
+}
+
+/* Dimmed appearance for buttons the current user can't activate */
+.arr-roll-btn-disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
