@@ -38,6 +38,26 @@ The dialog lets you select:
 
 The GM always sees the DC and pass/fail results. Players see them only if the GM enabled visibility for that request.
 
+### Auto Save Requests
+
+When a PF1e attack action that includes a saving throw is posted to chat, the module automatically converts it into an embedded targeted roll-request card. The original spell/attack card header and footer (damage buttons, effect notes, etc.) are preserved around the roll-request section.
+
+This feature is enabled by default and can be toggled in **Settings → Module Settings → Auto-Request Saving Throws**.
+
+**GM view:**
+
+- Each targeted token gets a compact row with their portrait, name, and a roll button.
+- **Roll All** — rolls the saving throw for every unrolled target, skipping the roll dialog.
+- **Roll NPCs** — like Roll All, but skips any NPC token that an active player has ownership of (so player-owned creatures roll themselves).
+- **Select All / Select Passed / Select Failed** — canvas token-selection shortcuts that highlight the relevant tokens based on current results.
+- Clicking any token portrait selects that token on the canvas.
+
+**Player view:**
+
+- Tokens the player has at least Observer permission on appear as normal rows with a roll button.
+- Tokens the player can see but lacks Observer permission on appear as a compact centered portrait grid (names and results hidden).
+- Tokens that are hidden from the player are removed from the card entirely.
+
 ### API
 
 Other modules can create roll requests programmatically:

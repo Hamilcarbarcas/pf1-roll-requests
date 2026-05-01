@@ -8,17 +8,39 @@ const MODULE_ID = "pf1-roll-requests";
 
 export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2) {
 
+  static _lastSettings = null;
+
   constructor(options = {}) {
     super(options);
-    this.checkMode = "multi";      // "single" or "multi"
-    this.dc = "";
-    this.showDC = false;
-    this.showResults = false;      // Whether pass/fail indicators are visible to players
-    this.rollMode = "roll";        // roll, gmroll, blindroll
-    this.flavor = "";
-    this.includeAid = true;        // Whether single-check mode includes Aid Another
-    this.selectedRequest = null;   // { type, key, name }
-    this.targetedActors = [];      // [{ id, name, img }, ...] — actors to prompt individually
+    const s = RollRequestDialog._lastSettings;
+    this.checkMode = s?.checkMode ?? "multi";
+    this.dc = s?.dc ?? "";
+    this.showDC = s?.showDC ?? false;
+    this.showResults = s?.showResults ?? false;
+    this.rollMode = s?.rollMode ?? "roll";
+    this.flavor = s?.flavor ?? "";
+    this.includeAid = s?.includeAid ?? true;
+    this.selectedRequest = s?.selectedRequest ?? null;
+    this.targetedActors = s?.targetedActors ?? [];
+  }
+
+  _saveSettings() {
+    RollRequestDialog._lastSettings = {
+      checkMode: this.checkMode,
+      dc: this.dc,
+      showDC: this.showDC,
+      showResults: this.showResults,
+      rollMode: this.rollMode,
+      flavor: this.flavor,
+      includeAid: this.includeAid,
+      selectedRequest: this.selectedRequest,
+      targetedActors: [...this.targetedActors],
+    };
+  }
+
+  async _onClose(options) {
+    this._saveSettings();
+    return super._onClose(options);
   }
 
   // ---- AppV2 Configuration ----
@@ -184,6 +206,11 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
         this.rollMode = val;
         this.showResults = false;
       }
+      if (this.rollMode === "blindroll") {
+        this.includeAid = false;
+        const aidCb = el.querySelector("#arr-include-aid");
+        if (aidCb) aidCb.checked = false;
+      }
     });
     el.querySelector("#arr-flavor")?.addEventListener("blur", (e) => { this.flavor = e.currentTarget.value; });
     el.querySelector("#arr-include-aid")?.addEventListener("change", (e) => { this.includeAid = e.currentTarget.checked; });
@@ -202,6 +229,17 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
         }
       });
     });
+
+    this._syncAidCheckbox();
+  }
+
+  _syncAidCheckbox() {
+    const checkbox = this.element?.querySelector("#arr-include-aid");
+    if (!checkbox) return;
+    const disableAid = this.selectedRequest?.type === "save" || this.selectedRequest?.type === "dice";
+    checkbox.disabled = disableAid;
+    const group = checkbox.closest(".form-group");
+    if (group) group.style.opacity = disableAid ? "0.4" : "";
   }
 
   // ---- Actions ----
@@ -216,6 +254,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     target.classList.add("selected");
 
     this.selectedRequest = { type, key, name };
+    this._syncAidCheckbox();
   }
 
   static #onRequestRoll(_event, _target) {
@@ -224,8 +263,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       return;
     }
 
-    // Force includeAid off for dice-type requests
-    const includeAid = this.selectedRequest.type === "dice" ? false : this.includeAid;
+    // Force includeAid off for dice-type and save-type requests
+    const includeAid = (this.selectedRequest.type === "dice" || this.selectedRequest.type === "save") ? false : this.includeAid;
 
     // Selection Check requires at least one actor to be chosen
     if (this.checkMode === "selection" && this.targetedActors.length === 0) {

@@ -4,6 +4,7 @@
 
 import { RollRequestDialog } from "./apps/RollRequestDialog.mjs";
 import { RollRequestChat } from "./apps/RollRequestChat.mjs";
+import { SaveAutoRequest } from "./apps/SaveAutoRequest.mjs";
 import { SocketHandler } from "./SocketHandler.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
@@ -11,6 +12,16 @@ const MODULE_ID = "pf1-roll-requests";
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing Pathfinder 1e Roll Requests`);
   game.pf1RollRequests = { MODULE_ID };
+
+  // Setting to auto-convert PF1 attack messages with saves into roll-request cards
+  game.settings.register(MODULE_ID, "auto-save-request", {
+    name: "Auto-Request Saving Throws",
+    hint: "Automatically convert PF1 attack chat messages that include a saving throw into embedded targeted roll-request cards.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
 
   // Setting to toggle the token-control-bar button
   game.settings.register(MODULE_ID, "show-button", {
@@ -31,6 +42,7 @@ Hooks.once("ready", () => {
 
 // ---- Render interactive elements on chat cards ----
 Hooks.on("renderChatMessageHTML", (message, html, data) => {
+  SaveAutoRequest.onRenderChatMessage(message, html);
   RollRequestChat.onRenderChatMessage(message, html, data);
 });
 
