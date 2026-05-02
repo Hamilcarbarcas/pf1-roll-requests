@@ -66,6 +66,11 @@ Hooks.on("getSceneControlButtons", (controls) => {
 
 // Public API for macros: `game.pf1RollRequests.requestRoll()`
 Hooks.once("ready", () => {
+  game.pf1RollRequests.bulkRollTargeted = async (message) => {
+    if (!game.user.isGM) return;
+    return RollRequestChat._bulkRollTargeted(message);
+  };
+
   game.pf1RollRequests.requestRoll = () => {
     if (!game.user.isGM) {
       ui.notifications.warn("Only the GM can create roll requests.");
@@ -153,7 +158,26 @@ Hooks.once("ready", () => {
     const showResults = options.showResults ?? false;
     const rollMode = options.rollMode ?? "roll";
     const flavor = options.flavor ?? "";
-    const includeAid = type === "dice" ? false : (options.includeAid ?? true);
+    const includeAid = (type === "dice" || type === "save") ? false : (options.includeAid ?? true);
+    const targetedActors = options.targetedActors ?? [];
+
+    if (mode === "targeted" && targetedActors.length === 0) {
+      ui.notifications.error("createRequest with mode 'targeted' requires a non-empty targetedActors array.");
+      return;
+    }
+
+    // Auto-populate missing entry fields from the canvas token document.
+    if (mode === "targeted") {
+      for (const entry of targetedActors) {
+        const tokenDoc = canvas.tokens?.get(entry.id)?.document;
+        if (tokenDoc) {
+          entry.tokenUUID ??= tokenDoc.uuid;
+          entry.name     ??= tokenDoc.name;
+          entry.img      ??= tokenDoc.texture?.src ?? tokenDoc.actor?.img;
+          entry.isHidden ??= tokenDoc.hidden ?? false;
+        }
+      }
+    }
 
     const requestData = {
       mode,
@@ -167,10 +191,21 @@ Hooks.once("ready", () => {
       rolledActors: {},
       aidResults: {},
       aidTotal: 0,
+      targetedActors,
+      actorResults: {},
+      actorAidResults: {},
+      usedActorIds: [],
     };
 
     const awaitResult = options.awaitResult ?? false;
+    const autoRoll = (mode === "targeted") ? (options.autoRoll ?? false) : false;
     const message = await RollRequestChat.createChatCard(requestData);
+
+    // Targeted mode: optionally auto-roll all targets, then return the message.
+    if (mode === "targeted") {
+      if (autoRoll && message) await RollRequestChat._bulkRollTargeted(message);
+      return message;
+    }
 
     // If awaitResult is requested for a single-check, return a Promise
     // that resolves when the primary roll is completed.

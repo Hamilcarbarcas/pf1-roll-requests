@@ -325,10 +325,11 @@ export class RollRequestChat {
     // --- Acquire actor and tokenId based on roll type ---
     let actor, tokenId;
     if (rollType === "targeted") {
-      // Actor is fixed — it's the specific targeted actor regardless of selection
-      if (currentFlags.isSaveRequest) {
-        const entry = currentFlags.targetedActors?.find(t => t.id === targetActorId);
-        const tokenDoc = fromUuidSync(entry?.tokenUUID);
+      // If the target entry has a tokenUUID, look up via the token (handles unlinked tokens).
+      // Otherwise fall back to actor ID lookup (dialog-created requests with linked actors).
+      const entry = currentFlags.targetedActors?.find(t => t.id === targetActorId);
+      if (entry?.tokenUUID) {
+        const tokenDoc = fromUuidSync(entry.tokenUUID);
         actor = tokenDoc?.actor;
         tokenId = tokenDoc?.id ?? null;
       } else {
@@ -347,10 +348,11 @@ export class RollRequestChat {
 
     // --- Permission check: targeted primary rolls are actor-specific ---
     if (rollType === "targeted" && !game.user.isGM) {
-      const canRoll = currentFlags.isSaveRequest ? actor.isOwner : game.user.character?.id === targetActorId;
+      const entry = currentFlags.targetedActors?.find(t => t.id === targetActorId);
+      const canRoll = entry?.tokenUUID ? actor.isOwner : game.user.character?.id === targetActorId;
       if (!canRoll) {
-        ui.notifications.warn(currentFlags.isSaveRequest
-          ? "You can only roll saves for tokens you own."
+        ui.notifications.warn(entry?.tokenUUID
+          ? "You can only roll for tokens you own."
           : "You can only roll for your own character.");
         return;
       }
@@ -383,8 +385,7 @@ export class RollRequestChat {
       }
     } else if (rollType === "targeted") {
       const usedActorIds = currentFlags.usedActorIds || [];
-      const dedupKey = currentFlags.isSaveRequest ? targetActorId : actor.id;
-      if (usedActorIds.includes(dedupKey)) {
+      if (usedActorIds.includes(targetActorId)) {
         ui.notifications.warn(`${actor.name} has already used their action in this request.`);
         return;
       }
@@ -448,7 +449,7 @@ export class RollRequestChat {
     const resultEntry = {
       tokenId,
       actorId: actor.id,
-      resultKey: (currentFlags.isSaveRequest && rollType === "targeted") ? targetActorId : actor.id,
+      resultKey: rollType === "targeted" ? targetActorId : actor.id,
       actorName: actor.name,
       actorImg: actor.img,
       total: rollResult.total,
@@ -1567,7 +1568,16 @@ export class RollRequestChat {
       if (!currentFlags) break;
       if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
 
-      const actor = game.actors.get(target.id);
+      // Resolve actor: use tokenUUID when present (handles unlinked tokens).
+      let actor, tokenId;
+      if (target.tokenUUID) {
+        const tokenDoc = fromUuidSync(target.tokenUUID);
+        actor = tokenDoc?.actor;
+        tokenId = tokenDoc?.id ?? null;
+      } else {
+        actor = game.actors.get(target.id);
+        tokenId = actor?.getActiveTokens?.()?.[0]?.id ?? null;
+      }
       if (!actor) continue;
 
       let rollResult;
@@ -1579,12 +1589,11 @@ export class RollRequestChat {
       }
       if (!rollResult) continue;
 
-      const tokenId = actor.getActiveTokens?.()?.[0]?.id ?? null;
       const notes = await RollRequestChat._getEffectNotes(actor, initialFlags.request);
       const resultEntry = {
         tokenId,
         actorId: actor.id,
-        resultKey: actor.id,
+        resultKey: target.id,
         actorName: actor.name,
         actorImg: actor.img,
         total: rollResult.total,
