@@ -120,13 +120,25 @@ export class RollRequestChat {
 
   static _bindMultiCheck(message, card, flags) {
     const rollBtn = card.querySelector('.arr-roll-btn[data-action="roll"]');
-    if (!rollBtn) return;
+    if (rollBtn) {
+      rollBtn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        await RollRequestChat._handleRoll(message, flags, "multi");
+      });
+    }
 
-    rollBtn.addEventListener("click", async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      await RollRequestChat._handleRoll(message, flags, "multi");
-    });
+    if (flags.includeAid) {
+      const aidBtn = card.querySelector('.arr-roll-btn[data-action="rollMultiAid"]');
+      if (aidBtn) {
+        aidBtn.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          await RollRequestChat._handleRoll(message, flags, "multiAid");
+        });
+      }
+      RollRequestChat._updateAidDisplay(card, flags, false, flags.aidTotal || 0);
+    }
   }
 
   // ----------------------------------------------------------
@@ -367,8 +379,16 @@ export class RollRequestChat {
     // --- Duplicate / one-action-per-actor checks ---
     if (rollType === "multi") {
       const rolledActors = currentFlags.rolledActors || {};
-      if (rolledActors[tokenId]) {
-        ui.notifications.warn(`${actor.name} has already rolled.`);
+      const aidResults = currentFlags.aidResults || {};
+      if (rolledActors[tokenId] || aidResults[tokenId]) {
+        ui.notifications.warn(`${actor.name} has already used their action in this request.`);
+        return;
+      }
+    } else if (rollType === "multiAid") {
+      const rolledActors = currentFlags.rolledActors || {};
+      const aidResults = currentFlags.aidResults || {};
+      if (rolledActors[tokenId] || aidResults[tokenId]) {
+        ui.notifications.warn(`${actor.name} has already used their action in this request.`);
         return;
       }
     } else if (rollType === "aid") {
@@ -412,7 +432,7 @@ export class RollRequestChat {
     if (dc != null && request.type !== "dice" && request.type !== "save") {
       const maxPossible = RollRequestChat._getMaxRoll(actor, request);
       if (maxPossible !== null && maxPossible < dc) {
-        const msg = (rollType === "aid" || rollType === "targetedAid")
+        const msg = (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid")
           ? `${actor.name}: Success not possible, unable to aid another.`
           : `${actor.name} cannot succeed on this check, even with a natural 20.`;
         ui.notifications.warn(msg);
@@ -429,6 +449,10 @@ export class RollRequestChat {
         rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal);
       } else if (rollType === "primary" && currentFlags.includeAid) {
         rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc);
+      } else if (rollType === "multi" && currentFlags.includeAid) {
+        // Use the current unredeemed aid pool (resets to 0 after each primary roll)
+        const aidTotal = currentFlags.aidTotal || 0;
+        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal);
       } else {
         rollResult = await RollRequestChat._performRoll(actor, request, dc);
       }
@@ -460,7 +484,7 @@ export class RollRequestChat {
     };
 
     // For Aid rolls: calculate the bonus contributed
-    if (rollType === "aid" || rollType === "targetedAid") {
+    if (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid") {
       if (resultEntry.total >= 10) {
         const overAmount = resultEntry.total - 10;
         const extraBonus = Math.floor(overAmount / 5);
@@ -710,6 +734,23 @@ export class RollRequestChat {
       rolledActors[resultEntry.tokenId] = resultEntry;
       updateData[`flags.${MODULE_ID}.rolledActors`] = rolledActors;
 
+      if (flags.includeAid) {
+        // Mark all currently unredeemed aid entries as consumed and reset the pool
+        const aidResults = foundry.utils.deepClone(flags.aidResults || {});
+        for (const entry of Object.values(aidResults)) {
+          if (!entry.consumed) entry.consumed = true;
+        }
+        updateData[`flags.${MODULE_ID}.aidResults`] = aidResults;
+        updateData[`flags.${MODULE_ID}.aidTotal`] = 0;
+      }
+
+    } else if (rollType === "multiAid") {
+      const aidResults = foundry.utils.deepClone(flags.aidResults || {});
+      aidResults[resultEntry.tokenId] = resultEntry;
+      updateData[`flags.${MODULE_ID}.aidResults`] = aidResults;
+      const newAidTotal = (flags.aidTotal || 0) + (resultEntry.aidBonus || 0);
+      updateData[`flags.${MODULE_ID}.aidTotal`] = newAidTotal;
+
     } else if (rollType === "aid") {
       const aidResults = foundry.utils.deepClone(flags.aidResults || {});
       aidResults[resultEntry.tokenId] = resultEntry;
@@ -842,16 +883,38 @@ export class RollRequestChat {
   // ----------------------------------------------------------
 
   static async _injectMultiResults(card, flags) {
-    const list = card.querySelector(".arr-results-list");
-    if (!list) return;
-
-    const rolledActors = flags.rolledActors || {};
-    const dc = flags.dc;
-    const showResults = flags.showResults;
     const hideTotalFromPlayers = flags.rollMode === "publicblind";
 
-    for (const entry of Object.values(rolledActors)) {
-      list.insertAdjacentHTML("beforeend", await RollRequestChat._buildResultHTML(entry, dc, showResults, hideTotalFromPlayers));
+    // Primary roll results
+    const list = card.querySelector(".arr-results-list");
+    if (list) {
+      const rolledActors = flags.rolledActors || {};
+      const dc = flags.dc;
+      const showResults = flags.showResults;
+      for (const entry of Object.values(rolledActors)) {
+        list.insertAdjacentHTML("beforeend", await RollRequestChat._buildResultHTML(entry, dc, showResults, hideTotalFromPlayers));
+      }
+    }
+
+    if (flags.includeAid) {
+      // Aid results (all history; consumed ones are greyed via CSS class)
+      const aidList = card.querySelector(".arr-aid-results");
+      if (aidList) {
+        const aidResults = flags.aidResults || {};
+        for (const entry of Object.values(aidResults)) {
+          aidList.insertAdjacentHTML("beforeend", await RollRequestChat._buildAidResultHTML(entry, hideTotalFromPlayers));
+        }
+      }
+
+      // Aid bonus display (current unredeemed pool)
+      const aidTotal = flags.aidTotal || 0;
+      const bonusDisplay = card.querySelector(".arr-aid-bonus-display");
+      const bonusValue = card.querySelector(".arr-aid-bonus-value");
+      if (bonusDisplay && aidTotal > 0) {
+        if (hideTotalFromPlayers) bonusDisplay.classList.add("gm-only");
+        bonusDisplay.style.display = "inline";
+        if (bonusValue) bonusValue.textContent = `+${aidTotal}`;
+      }
     }
   }
 
@@ -1085,7 +1148,8 @@ export class RollRequestChat {
 
     const hasDetails = rollDetailsHtml || notesHtml;
     const detailsClass = hideTotalFromPlayers ? " gm-only" : "";
-    return `<li class="arr-result-entry arr-aid-entry flexrow" data-token-id="${entry.tokenId}">
+    const consumedClass = entry.consumed ? " arr-aid-consumed" : "";
+    return `<li class="arr-result-entry arr-aid-entry flexrow${consumedClass}" data-token-id="${entry.tokenId}">
       <div class="arr-result-row flexrow">
         <div class="arr-result-actor flexrow">
           <img class="arr-actor-img" src="${entry.actorImg}" alt="${entry.actorName}" />
@@ -1162,6 +1226,7 @@ export class RollRequestChat {
   static async _createAidResultElement(entry, hideTotalFromPlayers = false) {
     const li = document.createElement("li");
     li.classList.add("arr-result-entry", "arr-aid-entry", "flexrow");
+    if (entry.consumed) li.classList.add("arr-aid-consumed");
     li.dataset.tokenId = entry.tokenId;
 
     const showDetails = !hideTotalFromPlayers || game.user.isGM;
@@ -1219,6 +1284,18 @@ export class RollRequestChat {
         for (const entry of Object.values(rolledActors)) {
           list.appendChild(await RollRequestChat._createResultElement(entry, flags.dc, flags.showResults, hideTotalFromPlayers));
         }
+      }
+
+      if (flags.includeAid) {
+        const aidList = card.querySelector(".arr-aid-results");
+        if (aidList) {
+          aidList.innerHTML = "";
+          const aidResults = flags.aidResults || {};
+          for (const entry of Object.values(aidResults)) {
+            aidList.appendChild(await RollRequestChat._createAidResultElement(entry, hideTotalFromPlayers));
+          }
+        }
+        RollRequestChat._updateAidDisplay(card, flags, hideTotalFromPlayers, flags.aidTotal || 0);
       }
 
     } else if (flags.mode === "single") {
@@ -1319,8 +1396,8 @@ export class RollRequestChat {
   // Update the aid bonus display on a single-check card
   // ----------------------------------------------------------
 
-  static _updateAidDisplay(card, flags, hideTotalFromPlayers = false) {
-    const aidTotal = RollRequestChat._calculateAidTotal(flags);
+  static _updateAidDisplay(card, flags, hideTotalFromPlayers = false, aidTotalOverride = null) {
+    const aidTotal = aidTotalOverride !== null ? aidTotalOverride : RollRequestChat._calculateAidTotal(flags);
     const bonusDisplay = card.querySelector(".arr-aid-bonus-display");
     const bonusValue = card.querySelector(".arr-aid-bonus-value");
     if (bonusDisplay) {

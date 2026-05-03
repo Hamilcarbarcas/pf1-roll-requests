@@ -317,6 +317,11 @@
   color: #b94a48;
 }
 
+/* Consumed aid entries (spent by a prior primary roll in multi-check mode) */
+.arr-aid-consumed {
+  opacity: 0.4;
+}
+
 /* ---- Effect Notes / Footnotes ---- */
 
 .arr-notes {
