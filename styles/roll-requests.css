@@ -539,6 +539,104 @@
 }
 
 /* ============================================================
+   Per-target combined dropdown — defenses section
+   ============================================================ */
+
+/* Chevron affordance next to the target name */
+.arr-defenses-icon {
+  font-size: 9px;
+  color: #888;
+  margin-left: 4px;
+  align-self: center;
+  flex: 0 0 auto;
+}
+
+.arr-defenses-icon:hover {
+  color: #444;
+}
+
+/* Hidden until the block is expanded (mirrors .arr-targeted-roll-details) */
+.arr-targeted-defenses {
+  display: none;
+  font-size: 11px;
+  padding: 2px 0 2px 34px;
+  width: 100%;
+}
+
+.arr-targeted-block.arr-expanded > .arr-targeted-defenses {
+  display: block;
+}
+
+.arr-defenses-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.arr-def-header {
+  font-weight: bold;
+  font-size: 11px;
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 1px;
+}
+
+/* A row of inline stats (AC / CMD / saves) — label and value on one line */
+.arr-def-row {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 1px;
+}
+
+.arr-def-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.arr-def-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #666;
+}
+
+.arr-def-val {
+  font-weight: bold;
+}
+
+/* Note / tag groups (AC/CMD/save notes, DR, ER, conditions) — inline label */
+.arr-def-notes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.arr-def-notes-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #666;
+  flex: 0 0 auto;
+}
+
+.arr-def-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.arr-def-tag {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid #c9c9c9;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+  line-height: 1.4;
+}
+
+/* ============================================================
    Save-Request compact mode
    ============================================================ */
 

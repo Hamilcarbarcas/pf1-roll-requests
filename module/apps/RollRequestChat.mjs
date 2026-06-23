@@ -42,6 +42,7 @@ export class RollRequestChat {
       includeAid: requestData.includeAid,
       modeName,
       targetedActors: requestData.targetedActors ?? [],
+      isSaveRequest: requestData.isSaveRequest ?? false,
     };
 
     const html = await renderTemplate(template, templateData);
@@ -179,14 +180,15 @@ export class RollRequestChat {
     card.querySelectorAll('.arr-roll-btn[data-action="rollTargeted"]').forEach(btn => {
       const targetActorId = btn.dataset.actorId;
 
-      // Dim the button for users who don't own this actor
-      let ownedByUser;
-      if (flags.isSaveRequest) {
-        const entry = flags.targetedActors?.find(t => t.id === targetActorId);
-        ownedByUser = fromUuidSync(entry?.tokenUUID)?.actor?.isOwner ?? false;
-      } else {
-        ownedByUser = game.user.character?.id === targetActorId;
-      }
+      // Dim the button for users who don't own this actor. Resolve ownership via
+      // the token (tokenUUID → actor.isOwner) whenever present — this matches the
+      // permission check in _handleRoll and works for any targeted request, not
+      // just saves. Fall back to the assigned-character id only when there is no
+      // token reference (e.g. dialog-created requests with linked actors).
+      const entry = flags.targetedActors?.find(t => t.id === targetActorId);
+      const ownedByUser = entry?.tokenUUID
+        ? (fromUuidSync(entry.tokenUUID)?.actor?.isOwner ?? false)
+        : game.user.character?.id === targetActorId;
       if (!game.user.isGM && !ownedByUser) {
         btn.classList.add("arr-roll-btn-disabled");
       }
@@ -300,6 +302,10 @@ export class RollRequestChat {
           });
         }
       }
+
+      // Combined row-click dropdown (defenses + post-roll details) — only the
+      // blocks surviving above (OBSERVER+/GM)
+      RollRequestChat._bindTargetedExpand(card, flags);
     }
 
     // Blind-roll targeted (non-save): GM-only Roll All button
@@ -315,6 +321,122 @@ export class RollRequestChat {
         await RollRequestChat._bulkRollTargeted(message);
       });
     }
+  }
+
+  // ----------------------------------------------------------
+  // Per-target combined dropdown (save requests only)
+  // ----------------------------------------------------------
+
+  // Bind a click on the whole actor row to toggle the combined dropdown:
+  // post-roll roll details (when present) on top, defenses below. Works
+  // pre-roll too (defenses only). Sub-observer blocks are already removed for
+  // non-GMs, so anything present here is OBSERVER+ (or GM) — no extra check.
+  static _bindTargetedExpand(card, flags) {
+    for (const block of card.querySelectorAll(".arr-targeted-block")) {
+      const actorId = block.dataset.actorId;
+      const row = block.querySelector(".arr-targeted-actor-row");
+      const panel = block.querySelector(":scope > .arr-targeted-defenses");
+      if (!row || !panel) continue;
+      const entry = flags.targetedActors?.find(t => t.id === actorId);
+
+      const rotateIcons = (open) => {
+        for (const icon of block.querySelectorAll(".arr-defenses-icon, .arr-targeted-actor-row .arr-expand-icon")) {
+          icon.classList.toggle("fa-chevron-up", open);
+          icon.classList.toggle("fa-chevron-down", !open);
+        }
+      };
+
+      row.style.cursor = "pointer";
+      row.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        // Build defenses once, lazily, from the live actor on this client.
+        if (!panel.dataset.loaded) {
+          const actor = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID)?.actor : null;
+          if (!actor) return void ui.notifications.warn("Could not load target defenses.");
+          try {
+            panel.innerHTML = await RollRequestChat._buildDefensesPanel(actor);
+            panel.dataset.loaded = "1";
+          } catch (err) {
+            console.error("pf1-roll-requests | failed to build defenses panel", err);
+            return;
+          }
+        }
+
+        const open = block.classList.toggle("arr-expanded");
+        rotateIcons(open);
+      });
+    }
+  }
+
+  // Build the compact defenses panel HTML for an actor. Mirrors the data
+  // assembly in PF1's actor.displayDefenseCard (which can't be used directly
+  // because it requires ownership). All reads are permission-free.
+  static async _buildDefensesPanel(actor) {
+    const rollData = actor.getRollData();
+    const sys = actor.system;
+    const formatTextNotes = (notes) => notes?.split(/[\n\r]+/).map((text) => ({ text })) ?? [];
+
+    const [acNotes, cmdNotes, srNotes, saveNotes] = await Promise.all([
+      actor.getContextNotesParsed("ac", { rollData }),
+      actor.getContextNotesParsed("cmd", { rollData }),
+      actor.getContextNotesParsed("sr", { rollData }),
+      actor.getContextNotesParsed("allSavingThrows", { rollData }),
+    ]);
+    if (sys.attributes?.acNotes) acNotes.push(...formatTextNotes(sys.attributes.acNotes));
+    if (sys.attributes?.cmdNotes) cmdNotes.push(...formatTextNotes(sys.attributes.cmdNotes));
+    if (sys.attributes?.srNotes) srNotes.push(...formatTextNotes(sys.attributes.srNotes));
+    if (sys.attributes?.saveNotes) saveNotes.push(...formatTextNotes(sys.attributes.saveNotes));
+
+    // Damage reduction / energy resistance (string maps keyed by type)
+    const drNotes = Object.values(actor.parseResistances?.("dr") ?? {}).map((text) => ({ text }));
+    const erNotes = Object.values(actor.parseResistances?.("eres") ?? {}).map((text) => ({ text }));
+
+    // Active conditions flagged for defense display
+    const conditions = Object.entries(sys.conditions ?? {})
+      .filter(([, enabled]) => enabled)
+      .map(([id]) => pf1.registry?.conditions?.get(id))
+      .filter((c) => c?.showInDefense)
+      .map((c) => ({ text: c.name }));
+
+    const ac = sys.attributes?.ac ?? {};
+    const cmd = sys.attributes?.cmd ?? {};
+    const saves = sys.attributes?.savingThrows ?? {};
+    const sr = sys.attributes?.sr?.total;
+
+    const sign = (n) => (Number(n) >= 0 ? `+${n}` : `${n}`);
+    const stat = (label, val) =>
+      `<span class="arr-def-stat"><span class="arr-def-label">${label}</span><span class="arr-def-val">${val}</span></span>`;
+    const noteGroup = (label, notes) => {
+      if (!notes?.length) return "";
+      const tags = notes
+        .map((n) => `<span class="arr-def-tag"${n.source ? ` title="${n.source}"` : ""}>${n.text}</span>`)
+        .join("");
+      return `<div class="arr-def-notes"><span class="arr-def-notes-label">${label}</span><div class="arr-def-tags">${tags}</div></div>`;
+    };
+
+    let html = `<div class="arr-defenses-content">`;
+    html += `<div class="arr-def-header">Defenses</div>`;
+
+    html += `<div class="arr-def-row">${stat("AC", ac.normal?.total ?? 0)}${stat("Touch", ac.touch?.total ?? 0)}${stat("FF", ac.flatFooted?.total ?? 0)}</div>`;
+    html += noteGroup("AC Notes", acNotes);
+
+    let cmdRow = `${stat("CMD", cmd.total ?? 0)}${stat("FF CMD", cmd.flatFootedTotal ?? 0)}`;
+    if (sr) cmdRow += stat("SR", sr);
+    html += `<div class="arr-def-row">${cmdRow}</div>`;
+    html += noteGroup("CMD Notes", cmdNotes);
+    if (sr) html += noteGroup("SR Notes", srNotes);
+
+    html += `<div class="arr-def-row">${stat("Fort", sign(saves.fort?.total ?? 0))}${stat("Ref", sign(saves.ref?.total ?? 0))}${stat("Will", sign(saves.will?.total ?? 0))}</div>`;
+    html += noteGroup("Save Notes", saveNotes);
+
+    html += noteGroup("Damage Reduction", drNotes);
+    html += noteGroup("Energy Resistance", erNotes);
+    html += noteGroup("Conditions", conditions);
+
+    html += `</div>`;
+    return html;
   }
 
   // ----------------------------------------------------------
@@ -858,6 +980,7 @@ export class RollRequestChat {
       includeAid: flags.includeAid,
       modeName,
       targetedActors: flags.targetedActors ?? [],
+      isSaveRequest: flags.isSaveRequest ?? false,
     };
 
     let html = await renderTemplate(template, templateData);
@@ -1373,7 +1496,9 @@ export class RollRequestChat {
       });
     });
 
-    // Targeted card: click the actor row to expand roll details
+    // Targeted card: click the actor row to expand roll details.
+    // Save-request cards handle their own combined dropdown in _bindTargetedExpand.
+    if (card.classList.contains("arr-save-request")) return;
     card.querySelectorAll(".arr-targeted-actor-row").forEach(row => {
       row.addEventListener("click", (ev) => {
         const block = row.closest(".arr-targeted-block");

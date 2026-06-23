@@ -51,11 +51,12 @@ This feature is enabled by default and can be toggled in **Settings → Module S
 - **Roll NPCs** — like Roll All, but skips any NPC token that an active player has ownership of (so player-owned creatures roll themselves).
 - **Select All / Select Passed / Select Failed** — canvas token-selection shortcuts that highlight the relevant tokens based on current results.
 - Clicking any token portrait selects that token on the canvas.
+- Clicking a target's **row** expands a collapsible dropdown. Before a roll it shows that creature's defenses; after a roll it shows the roll breakdown on top with the defenses below. Defenses include AC / touch / FF AC, CMD / flat-footed CMD, all three saving throws, plus spell resistance, damage reduction, energy resistance, active conditions, and any AC / CMD / save notes.
 - When there is only one target, all bulk and selection buttons are suppressed (no point in Roll All or Select Passed with a single token).
 
 **Player view:**
 
-- Tokens the player has at least Observer permission on appear as normal rows with a roll button.
+- Tokens the player has at least Observer permission on appear as normal rows with a roll button. Clicking the token's **row** expands the same dropdown available to the GM (defenses, plus the roll breakdown once rolled).
 - Tokens the player can see but lacks Observer permission on appear as a compact centered portrait grid (names and results hidden).
 - Tokens that are hidden from the player are removed from the card entirely.
 

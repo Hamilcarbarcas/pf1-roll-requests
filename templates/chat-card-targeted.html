@@ -19,6 +19,9 @@
                 <div class="arr-result-actor flexrow">
                     <img class="arr-actor-img" src="{{this.img}}" alt="{{this.name}}" />
                     <span class="arr-actor-name">{{this.name}}</span>
+                    {{#if @root.isSaveRequest}}
+                    <i class="arr-defenses-icon fas fa-chevron-down" title="Show defenses"></i>
+                    {{/if}}
                     {{#if @root.includeAid}}
                     <span class="arr-aid-bonus-display" style="display:none;">
                         (<strong class="arr-aid-bonus-value">+0</strong> Aid)
@@ -31,6 +34,11 @@
                     <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
                 </a>
             </div>
+
+            {{#if @root.isSaveRequest}}
+            <!-- Collapsible defenses panel (observer+; populated lazily on first expand) -->
+            <div class="arr-targeted-defenses"></div>
+            {{/if}}
 
             {{#if @root.includeAid}}
             <!-- Aid Another sub-section -->
