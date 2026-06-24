@@ -198,7 +198,7 @@ game.pf1RollRequests.createRequest({
 - The formatter receives the card's current `flags` (including `rolledActors`, `dc`, `rollMode`, etc.) and returns an HTML string, or `""` for nothing. **Recompute from the results each call** rather than accumulating — the formatter runs on every roll, so it stays correct through re-rolls or deletions.
 - The summary is recomputed and re-rendered automatically on every roll result.
 - **Player visibility follows `showResults`**: when results are hidden from players (`showResults: false`), the summary is GM-only; when results are public, players see it too.
-- Currently rendered in **multi-check** cards (the slot lives in that template).
+- The summary slot is present in all card types (single, multi-check, and targeted).
 - `game.pf1RollRequests.unregisterSummary(key)` removes a formatter.
 
 ### Hook

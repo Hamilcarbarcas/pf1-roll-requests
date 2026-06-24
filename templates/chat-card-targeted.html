@@ -10,6 +10,9 @@
     <div class="arr-flavor">{{flavor}}</div>
     {{/if}}
 
+    {{! Optional aggregate summary slot (populated via a registered summary formatter) }}
+    {{{summaryHtml}}}
+
     <div class="arr-card-body">
         {{#each targetedActors}}
         <div class="arr-targeted-block" data-actor-id="{{this.id}}">
