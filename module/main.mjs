@@ -5,6 +5,9 @@
 import { RollRequestDialog } from "./apps/RollRequestDialog.mjs";
 import { RollRequestChat } from "./apps/RollRequestChat.mjs";
 import { SaveAutoRequest } from "./apps/SaveAutoRequest.mjs";
+import { BlacklistConfig } from "./apps/BlacklistConfig.mjs";
+import { RollOptionsConfig } from "./apps/RollOptionsConfig.mjs";
+import { registerQuickAction, unregisterQuickAction, getQuickActions } from "./roll-options.mjs";
 import { SocketHandler } from "./SocketHandler.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
@@ -12,6 +15,15 @@ const MODULE_ID = "pf1-roll-requests";
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing Pathfinder 1e Roll Requests`);
   game.pf1RollRequests = { MODULE_ID };
+
+  // Public API for other modules to contribute Quick Action buttons.
+  game.pf1RollRequests.registerQuickAction = registerQuickAction;
+  game.pf1RollRequests.unregisterQuickAction = unregisterQuickAction;
+  game.pf1RollRequests.getQuickActions = getQuickActions;
+
+  // Public API for registering card summary formatters (live aggregate displays).
+  game.pf1RollRequests.registerSummary = RollRequestChat.registerSummary;
+  game.pf1RollRequests.unregisterSummary = RollRequestChat.unregisterSummary;
 
   // Setting to auto-convert PF1 attack messages with saves into roll-request cards
   game.settings.register(MODULE_ID, "auto-save-request", {
@@ -32,6 +44,50 @@ Hooks.once("init", () => {
     type: Boolean,
     default: true,
     requiresReload: true,
+  });
+
+  // Persistent list of actor ids excluded from the Selection Check prompt list.
+  game.settings.register(MODULE_ID, "npc-blacklist", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  });
+
+  // Settings-menu entry to view and restore excluded actors.
+  game.settings.registerMenu(MODULE_ID, "npc-blacklist-menu", {
+    name: "Excluded Actors",
+    label: "Manage Excluded Actors",
+    hint: "View and restore player-owned NPCs that have been excluded from the Selection Check prompt list.",
+    icon: "fa-solid fa-user-slash",
+    type: BlacklistConfig,
+    restricted: true,
+  });
+
+  // Hidden roll categories in the Roll Request dialog.
+  game.settings.register(MODULE_ID, "excluded-categories", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  });
+
+  // Hidden Quick Actions in the Roll Request dialog.
+  game.settings.register(MODULE_ID, "excluded-quick-actions", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  });
+
+  // Settings-menu entry to toggle categories and Quick Actions.
+  game.settings.registerMenu(MODULE_ID, "roll-options-menu", {
+    name: "Roll Categories & Quick Actions",
+    label: "Configure Roll Options",
+    hint: "Show or hide entire roll categories and individual Quick Actions in the Roll Request dialog.",
+    icon: "fa-solid fa-sliders",
+    type: RollOptionsConfig,
+    restricted: true,
   });
 });
 
@@ -93,6 +149,9 @@ Hooks.once("ready", () => {
    * @param {string} [options.rollMode="roll"]    - "roll", "gmroll", or "blindroll"
    * @param {string} [options.flavor=""]          - Flavor text
    * @param {boolean} [options.includeAid=true]   - Whether Aid Another is included (single mode only; forced off for dice)
+   * @param {string} [options.summaryKey]         - Key of a summary formatter registered via
+   *   game.pf1RollRequests.registerSummary(). Renders a live aggregate line into the card, recomputed
+   *   on each roll. Player visibility follows showResults. Currently displayed in multi-check cards.
    * @param {boolean} [options.awaitResult=false]  - If true, returns a Promise that resolves with the
    *   primary roll result once a player completes the roll. Only works with mode "single".
    *   The promise resolves with an object: { messageId, total, actorName, actorImg, passed,
@@ -188,6 +247,7 @@ Hooks.once("ready", () => {
       flavor,
       includeAid,
       request: { type, key, name },
+      summaryKey: options.summaryKey ?? null,
       rolledActors: {},
       aidResults: {},
       aidTotal: 0,

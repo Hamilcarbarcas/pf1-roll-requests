@@ -23,12 +23,36 @@ A GM-only dialog accessed via the dice button in the token controls toolbar, or 
 The dialog lets you select:
 
 - **Check type** — Ability checks, saving throws, skill checks, or raw dice
-- **Mode** — Single-check or multi-check
+- **Mode** — Single-check, multi-check, or selection-check (prompt specific actors)
 - **DC** — Optional; can be shown or hidden from players
 - **Roll mode** — Public, GM-only, or blind roll. Selecting a blind roll mode automatically unchecks Aid Another (blind rolls imply the GM doesn't want player participation in the result).
 - **Result visibility** — Whether pass/fail indicators are shown to players
 - **Aid Another** — Whether other players can aid (single-check mode only; forced off for saves and dice)
 - **Flavor text** — Optional label shown on the chat card
+
+#### Prompt Actors (Selection Check)
+
+In **Selection Check** mode a checklist of actors appears. It is rebuilt each time the dialog opens from two sources:
+
+- **Configured player characters** — every non-GM user's assigned character (including offline players). Always listed.
+- **Player-owned NPCs** — NPC-type actors that a player owns (Owner permission) and that have a *linked* token on the scene you are currently viewing. These cover cohorts, animal companions, familiars, and similar — no per-actor setup is needed beyond the ownership you already grant. Rows from this source are marked with a paw icon. If no scene is active, none are added.
+
+To hide a player-owned NPC you don't want prompted, **right-click its row** and choose **Exclude from List**. Excluded actors are stored per-world and can be reviewed or restored under **Settings → Module Settings → Manage Excluded Actors**.
+
+#### Quick Actions
+
+A **Quick Actions** category at the bottom of the options grid holds common, pre-configured rolls. Unlike the other categories, clicking a Quick Action **executes immediately** with its own baked-in settings — it ignores the left-hand panel and does not wait for the **Request Roll** button.
+
+Available Quick Actions:
+
+- **Spot Checks** — prompts a Perception check from selected actors. Opens an actor picker (the same list as Prompt Actors, all selected by default), then posts a **public** request card whose roll totals are hidden from players (the GM sees them), with no DC and no Aid Another.
+
+#### Configuring Roll Options
+
+Under **Settings → Module Settings → Configure Roll Options** you can show or hide:
+
+- **Whole categories** — Ability Checks, Saving Throws, Skill Checks, Dice, and Quick Actions.
+- **Individual Quick Actions** — toggle each entry on or off (applies only while the Quick Actions category is shown).
 
 ### Chat Cards
 
@@ -116,6 +140,66 @@ Each `targetedActors` entry requires only `id` (the token document ID). All othe
 `game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place.
 
 When `awaitResult: true` is set (single-check mode only), `createRequest` returns a Promise that resolves with the roll result object once a player completes the roll, or `null` if the chat card is deleted before completion.
+
+### Registering Quick Actions
+
+Other modules can contribute their own buttons to the **Quick Actions** category. The module decides entirely what the button does — this API only provides the slot and, optionally, the actor selection.
+
+```js
+game.pf1RollRequests.registerQuickAction({
+  key: "my-mod-darkvision-check",   // required, unique
+  label: "Darkvision Check",        // button label (defaults to key)
+  icon: "fa-eye-low-vision",        // optional Font Awesome icon (default: fa-bolt)
+  promptActors: true,               // optional: show the actor picker first (default: false)
+  allActors: false,                 // optional: pass all eligible actors without prompting
+                                    //           (default: false; ignored if promptActors is true)
+  closeOnUse: false,                // optional: close the dialog afterwards (default: false)
+  callback: ({ app, actors, event }) => {
+    // app    — the RollRequestDialog instance (call app.close() to dismiss it,
+    //          or app.getEligibleActors() for the full eligible list)
+    // actors — [{ id, name, img }]: the picker selection (promptActors) or the full
+    //          eligible list (allActors); null when neither option is set
+    // event  — the originating click event
+    myModule.doSomething(actors);
+  },
+});
+```
+
+The three actor-passing modes are mutually ordered: `promptActors` (show picker) takes precedence, then `allActors` (send everyone), otherwise `actors` is `null`.
+
+- Register during the `ready` hook (or later) so `game.pf1RollRequests` exists.
+- The `callback` may be async; it is awaited, and the dialog is closed afterward only if `closeOnUse` is `true` (you can also call `app.close()` yourself at any time).
+- Registered actions appear in **Configure Roll Options** and can be hidden there like the built-ins.
+- `game.pf1RollRequests.unregisterQuickAction(key)` removes one; `game.pf1RollRequests.getQuickActions()` returns the current list.
+
+### Card Summaries (live aggregates)
+
+A request can display a running aggregate line in its card — for example, a cumulative tally derived from every roll as results come in. Register a formatter and reference it by key on the request:
+
+```js
+// Register once (e.g. in your "ready" hook)
+game.pf1RollRequests.registerSummary("monster-lore", (flags) => {
+  const dc = flags.dc;
+  let questions = 0;
+  for (const r of Object.values(flags.rolledActors ?? {})) {
+    if (dc != null && r.total >= dc) questions += 1 + Math.floor((r.total - dc) / 5);
+  }
+  return `<strong>Questions earned:</strong> ${questions}`;
+});
+
+// Then create a request that uses it
+game.pf1RollRequests.createRequest({
+  type: "skill", key: "kna", dc: 18,
+  mode: "multi",
+  summaryKey: "monster-lore",
+});
+```
+
+- The formatter receives the card's current `flags` (including `rolledActors`, `dc`, `rollMode`, etc.) and returns an HTML string, or `""` for nothing. **Recompute from the results each call** rather than accumulating — the formatter runs on every roll, so it stays correct through re-rolls or deletions.
+- The summary is recomputed and re-rendered automatically on every roll result.
+- **Player visibility follows `showResults`**: when results are hidden from players (`showResults: false`), the summary is GM-only; when results are public, players see it too.
+- Currently rendered in **multi-check** cards (the slot lives in that template).
+- `game.pf1RollRequests.unregisterSummary(key)` removes a formatter.
 
 ### Hook
 

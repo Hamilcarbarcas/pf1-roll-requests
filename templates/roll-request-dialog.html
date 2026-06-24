@@ -57,14 +57,16 @@
             <div class="arr-actor-selection" {{#unless (eq checkMode "selection")}}style="display:none;"{{/unless}}>
                 <label class="arr-actor-selection-label">Prompt Actors</label>
                 <div class="arr-actor-check-list">
-                    {{#each assignedActors}}
-                    <label class="arr-actor-check-label flexrow">
+                    {{#each promptActors}}
+                    <label class="arr-actor-check-label flexrow" data-source="{{this.source}}" data-actor-id="{{this.id}}"
+                           {{#if (eq this.source "npc")}}title="Right-click to exclude from list"{{/if}}>
                         <input type="checkbox" class="arr-actor-checkbox" data-actor-id="{{this.id}}" {{checked this.checked}} />
                         <img src="{{this.img}}" class="arr-actor-check-img" alt="{{this.name}}" />
                         <span class="arr-actor-check-name">{{this.name}}</span>
+                        {{#if (eq this.source "npc")}}<i class="fa-solid fa-paw arr-actor-npc-icon" title="Player-owned NPC on this scene"></i>{{/if}}
                     </label>
                     {{else}}
-                    <span class="arr-no-actors-msg">No player characters configured.</span>
+                    <span class="arr-no-actors-msg">No eligible actors.</span>
                     {{/each}}
                 </div>
             </div>
@@ -75,12 +77,20 @@
             {{#each optionGroups}}
             <div class="arr-option-header">{{this.text}}</div>
             <div class="arr-option-grid">
-                {{#each this.groups as |label key|}}
-                <div class="request-option{{#if (and @root.selectedRequest (eq @root.selectedRequest.key key))}} selected{{/if}}"
-                     data-type="{{../id}}" data-key="{{key}}" data-action="selectOption">
-                    {{label}}
-                </div>
-                {{/each}}
+                {{#if this.isQuickAction}}
+                    {{#each this.items}}
+                    <div class="request-option arr-quick-option" data-key="{{this.key}}" data-action="quickAction">
+                        <i class="fa-solid {{this.icon}} arr-quick-icon"></i> {{this.label}}
+                    </div>
+                    {{/each}}
+                {{else}}
+                    {{#each this.groups as |label key|}}
+                    <div class="request-option{{#if (and @root.selectedRequest (eq @root.selectedRequest.key key))}} selected{{/if}}"
+                         data-type="{{../id}}" data-key="{{key}}" data-action="selectOption">
+                        {{label}}
+                    </div>
+                    {{/each}}
+                {{/if}}
             </div>
             {{/each}}
         </div>

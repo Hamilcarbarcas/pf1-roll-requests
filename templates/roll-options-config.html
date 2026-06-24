@@ -1,0 +1,25 @@
+<div class="arr-options-config">
+    <fieldset class="arr-fieldset">
+        <legend>Roll Categories</legend>
+        <p class="arr-config-hint">Unchecked categories are hidden from the Roll Request dialog.</p>
+        {{#each categories}}
+        <label class="arr-config-row flexrow">
+            <input type="checkbox" name="category" value="{{this.id}}" {{checked this.enabled}} />
+            <span class="arr-config-name">{{this.label}}</span>
+        </label>
+        {{/each}}
+    </fieldset>
+
+    <fieldset class="arr-fieldset">
+        <legend>Quick Actions</legend>
+        <p class="arr-config-hint">Unchecked Quick Actions are hidden. Only applies when the Quick Actions category is shown.</p>
+        {{#each quickActions}}
+        <label class="arr-config-row flexrow">
+            <input type="checkbox" name="quick" value="{{this.key}}" {{checked this.enabled}} />
+            <span class="arr-config-name">{{this.label}}</span>
+        </label>
+        {{else}}
+        <span class="arr-no-actors-msg">No Quick Actions defined.</span>
+        {{/each}}
+    </fieldset>
+</div>

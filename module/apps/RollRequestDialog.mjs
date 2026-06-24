@@ -2,6 +2,8 @@
 // Pathfinder 1e Roll Requests — Roll Request Dialog (ApplicationV2)
 // ============================================================
 
+import { getQuickActions } from "../roll-options.mjs";
+
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const MODULE_ID = "pf1-roll-requests";
@@ -56,6 +58,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     actions: {
       selectOption: RollRequestDialog.#onSelectOption,
       requestRoll: RollRequestDialog.#onRequestRoll,
+      quickAction: RollRequestDialog.#onQuickAction,
     },
     position: { width: 700 },
   };
@@ -105,23 +108,29 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       d4: "d4", d6: "d6", d8: "d8", d10: "d10", d12: "d12", d20: "d20",
     };
 
-    const optionGroups = [
+    const allGroups = [
       { id: "ability", text: "Ability Check", groups: abilities },
       { id: "save", text: "Saving Throw", groups: saves },
       { id: "skill", text: "Skill Check", groups: skills },
       { id: "dice", text: "Dice", groups: dice },
     ];
 
-    // Non-GM users with an assigned character — include offline players
+    // Quick Actions — execute immediately (built-in) or invoke a mod callback.
+    const excludedQuick = new Set(game.settings.get(MODULE_ID, "excluded-quick-actions") ?? []);
+    const quickItems = getQuickActions()
+      .filter(qa => !excludedQuick.has(qa.key))
+      .map(qa => ({ key: qa.key, label: qa.label, icon: qa.icon ?? "fa-bolt" }));
+    if (quickItems.length > 0) {
+      allGroups.push({ id: "quick", text: "Quick Actions", isQuickAction: true, items: quickItems });
+    }
+
+    // Hide any categories disabled in the Roll Options config.
+    const excludedCats = new Set(game.settings.get(MODULE_ID, "excluded-categories") ?? []);
+    const optionGroups = allGroups.filter(g => !excludedCats.has(g.id));
+
+    // Build the "Prompt Actors" list from two sources, deduped by actor id.
     const targetedSet = new Set(this.targetedActors.map(a => a.id));
-    const assignedActors = game.users
-      .filter(u => !u.isGM && u.character)
-      .map(u => ({
-        id: u.character.id,
-        name: u.character.name,
-        img: u.character.img,
-        checked: targetedSet.has(u.character.id),
-      }));
+    const promptActors = this._getPromptActors(targetedSet);
 
     return foundry.utils.mergeObject(context, {
       checkMode: this.checkMode,
@@ -134,8 +143,213 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       includeAid: this.includeAid,
       optionGroups,
       selectedRequest: this.selectedRequest,
-      assignedActors,
+      promptActors,
     });
+  }
+
+  /**
+   * Build the list of actors offered in Selection Check mode.
+   *
+   * Two sources, merged and deduped by actor id (configured PCs win):
+   *   1. "assigned" — each non-GM user's configured character (always shown).
+   *   2. "npc"      — NPC-type actors with a player owner that have a *linked*
+   *                   token on the currently-viewed scene and are not blacklisted.
+   *
+   * @param {Set<string>} targetedSet - Actor ids currently checked, for restoring state.
+   * @returns {Array<{id: string, name: string, img: string, source: string, checked: boolean}>}
+   */
+  _getPromptActors(targetedSet) {
+    const rows = new Map();
+
+    // Source 1: configured player characters (includes offline players).
+    for (const user of game.users) {
+      if (user.isGM || !user.character) continue;
+      const c = user.character;
+      if (rows.has(c.id)) continue;
+      rows.set(c.id, { id: c.id, name: c.name, img: c.img, source: "assigned", checked: targetedSet.has(c.id) });
+    }
+
+    // Source 2: player-owned, linked NPCs with a token on the current scene.
+    const blacklist = new Set(game.settings.get(MODULE_ID, "npc-blacklist") ?? []);
+    const sceneActorIds = new Set(
+      (canvas.scene?.tokens ?? [])
+        .filter(t => t.actorLink && t.actorId)
+        .map(t => t.actorId)
+    );
+    for (const id of sceneActorIds) {
+      if (rows.has(id) || blacklist.has(id)) continue;
+      const actor = game.actors.get(id);
+      if (!actor || actor.type !== "npc" || !actor.hasPlayerOwner) continue;
+      rows.set(id, { id, name: actor.name, img: actor.img, source: "npc", checked: targetedSet.has(id) });
+    }
+
+    // Configured PCs first, then NPCs; alphabetical within each group.
+    return [...rows.values()].sort((a, b) => {
+      if (a.source !== b.source) return a.source === "assigned" ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  /**
+   * Add an actor to the persistent blacklist so it no longer appears as a
+   * player-owned NPC option, then refresh the dialog.
+   *
+   * @param {string} actorId
+   */
+  async _excludeActor(actorId) {
+    const list = new Set(game.settings.get(MODULE_ID, "npc-blacklist") ?? []);
+    list.add(actorId);
+    await game.settings.set(MODULE_ID, "npc-blacklist", [...list]);
+    // Drop it from the current selection if it was checked.
+    this.targetedActors = this.targetedActors.filter(a => a.id !== actorId);
+    const actor = game.actors.get(actorId);
+    ui.notifications.info(`${actor?.name ?? "Actor"} excluded from the roll-request prompt list.`);
+    this.render();
+  }
+
+  /** Context-menu entries for right-clicking a player-owned NPC row. */
+  _getActorContextOptions() {
+    return [
+      {
+        name: "Exclude from List",
+        icon: '<i class="fa-solid fa-eye-slash"></i>',
+        callback: (target) => {
+          const el = target instanceof HTMLElement ? target : target[0];
+          const actorId = el?.dataset.actorId;
+          if (actorId) this._excludeActor(actorId);
+        },
+      },
+    ];
+  }
+
+  // ---- Quick Actions ----
+
+  static async #onQuickAction(event, target) {
+    const action = getQuickActions().find(a => a.key === target.dataset.key);
+    if (!action) return;
+
+    let selectedActors = null;
+    if (action.promptActors) {
+      const ids = await this._promptActorSelection(action.label);
+      if (ids === null) return; // cancelled / no eligible actors
+      if (ids.length === 0) {
+        ui.notifications.warn("Please select at least one actor to prompt.");
+        return;
+      }
+      selectedActors = ids
+        .map(id => game.actors.get(id))
+        .filter(Boolean)
+        .map(a => ({ id: a.id, name: a.name, img: a.img }));
+    } else if (action.allActors) {
+      // Pass every eligible actor without prompting.
+      selectedActors = this._getPromptActors(new Set())
+        .map(a => ({ id: a.id, name: a.name, img: a.img }));
+    }
+
+    // External (mod-provided) quick action: invoke its callback.
+    if (typeof action.callback === "function") {
+      try {
+        await action.callback({ app: this, actors: selectedActors, event });
+      } catch (err) {
+        console.error(`pf1-roll-requests | Quick action '${action.key}' threw:`, err);
+        ui.notifications.error(`Quick action "${action.label}" failed; see console.`);
+      }
+      if (action.closeOnUse) this.close();
+      return;
+    }
+
+    // Built-in declarative quick action.
+    this._executeQuickAction(action, selectedActors ?? []);
+  }
+
+  /**
+   * Public helper for external quick actions: the actors eligible for the
+   * Prompt Actors / Quick Action picker (configured PCs + player-owned NPCs
+   * with a linked token on the current scene), minus blacklisted ones.
+   *
+   * @returns {Array<{id: string, name: string, img: string, source: string}>}
+   */
+  getEligibleActors() {
+    return this._getPromptActors(new Set())
+      .map(a => ({ id: a.id, name: a.name, img: a.img, source: a.source }));
+  }
+
+  /**
+   * Show a popup to pick which actors a quick action prompts. Uses the same
+   * actor list as the main Prompt Actors checklist, all selected by default.
+   *
+   * @param {string} label - The quick action's label (for the title).
+   * @returns {Promise<string[]|null>} Selected actor ids, or null if cancelled.
+   */
+  async _promptActorSelection(label) {
+    const actors = this._getPromptActors(new Set());
+    if (actors.length === 0) {
+      ui.notifications.warn("No eligible actors to prompt.");
+      return null;
+    }
+
+    const content = await renderTemplate(
+      `modules/${MODULE_ID}/templates/quick-actor-select.html`,
+      { label, actors }
+    );
+
+    const result = await foundry.applications.api.DialogV2.wait({
+      window: { title: `${label} — Select Actors`, icon: "fa-solid fa-eye" },
+      classes: ["pf1-roll-requests"],
+      position: { width: 320 },
+      content,
+      buttons: [
+        {
+          action: "prompt",
+          label: "Prompt",
+          icon: "fas fa-dice-d20",
+          default: true,
+          callback: (_event, _button, dialog) => {
+            const root = dialog.element;
+            return [...root.querySelectorAll(".arr-actor-checkbox:checked")].map(cb => cb.dataset.actorId);
+          },
+        },
+        { action: "cancel", label: "Cancel", icon: "fas fa-times" },
+      ],
+      rejectClose: false,
+    });
+
+    return Array.isArray(result) ? result : null;
+  }
+
+  /**
+   * Fire a quick action's pre-configured roll request, bypassing the left panel.
+   *
+   * @param {QuickAction} action
+   * @param {Array<{id: string, name: string, img: string}>} selectedActors
+   */
+  _executeQuickAction(action, selectedActors) {
+    const cfg = action.config;
+    const isTargeted = cfg.mode === "targeted";
+
+    const requestData = {
+      mode: cfg.mode,
+      dc: cfg.dc,
+      showDC: cfg.showDC,
+      showResults: cfg.showResults,
+      rollMode: cfg.rollMode,
+      flavor: "",
+      includeAid: cfg.includeAid,
+      request: action.request,
+      rolledActors: {},
+      aidResults: {},
+      aidTotal: 0,
+      targetedActors: isTargeted ? selectedActors : [],
+      actorResults: {},
+      actorAidResults: {},
+      usedActorIds: [],
+    };
+
+    import("./RollRequestChat.mjs").then(({ RollRequestChat }) => {
+      RollRequestChat.createChatCard(requestData);
+    });
+
+    this.close();
   }
 
   _getSkillOptions() {
@@ -229,6 +443,15 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
         }
       });
     });
+
+    // Right-click a player-owned NPC row to exclude it from the prompt list.
+    // ContextMenu.create() is V1-only; AppV2 must instantiate the namespaced class.
+    new foundry.applications.ux.ContextMenu(
+      el,
+      ".arr-actor-check-label[data-source='npc']",
+      this._getActorContextOptions(),
+      { jQuery: false, fixed: true }
+    );
 
     this._syncAidCheckbox();
   }

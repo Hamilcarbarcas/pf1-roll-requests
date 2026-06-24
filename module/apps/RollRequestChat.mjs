@@ -12,6 +12,64 @@ export class RollRequestChat {
   static _pendingResults = new Map();
 
   // ----------------------------------------------------------
+  // Summary formatter registry (public API)
+  // A registered formatter renders an aggregate line into the card and is
+  // recomputed on every roll. A request opts in via its `summaryKey`.
+  // ----------------------------------------------------------
+
+  static _summaryFormatters = new Map();
+
+  /**
+   * Register a summary formatter. The formatter receives the card's current
+   * flags and returns an HTML string (or "" for nothing) shown in the card's
+   * summary slot, recomputed on each roll.
+   *
+   * @param {string} key
+   * @param {(flags: object) => string} formatter
+   * @returns {string} The registered key.
+   */
+  static registerSummary(key, formatter) {
+    if (typeof key !== "string" || !key) {
+      throw new Error(`${MODULE_ID} | registerSummary requires a non-empty string 'key'.`);
+    }
+    if (typeof formatter !== "function") {
+      throw new Error(`${MODULE_ID} | Summary '${key}' requires a formatter function.`);
+    }
+    RollRequestChat._summaryFormatters.set(key, formatter);
+    return key;
+  }
+
+  /** Remove a registered summary formatter. */
+  static unregisterSummary(key) {
+    return RollRequestChat._summaryFormatters.delete(key);
+  }
+
+  /**
+   * Build the summary-slot HTML for a card, or "" when there's no summary.
+   * Visibility follows result visibility: when `showResults` is false the slot
+   * is wrapped in `.gm-only`, so players see it only when results are public.
+   *
+   * @param {object} flags - The card's current flag state.
+   * @returns {string}
+   */
+  static _renderSummary(flags) {
+    const key = flags.summaryKey;
+    if (!key) return "";
+    const formatter = RollRequestChat._summaryFormatters.get(key);
+    if (!formatter) return "";
+    let inner;
+    try {
+      inner = formatter(flags);
+    } catch (err) {
+      console.error(`${MODULE_ID} | Summary formatter '${key}' threw:`, err);
+      return "";
+    }
+    if (inner == null || inner === "") return "";
+    const gmOnly = flags.showResults ? "" : " gm-only";
+    return `<div class="arr-summary${gmOnly}">${inner}</div>`;
+  }
+
+  // ----------------------------------------------------------
   // Create and post the chat card
   // ----------------------------------------------------------
 
@@ -43,6 +101,7 @@ export class RollRequestChat {
       modeName,
       targetedActors: requestData.targetedActors ?? [],
       isSaveRequest: requestData.isSaveRequest ?? false,
+      summaryHtml: RollRequestChat._renderSummary(requestData),
     };
 
     const html = await renderTemplate(template, templateData);
@@ -981,6 +1040,7 @@ export class RollRequestChat {
       modeName,
       targetedActors: flags.targetedActors ?? [],
       isSaveRequest: flags.isSaveRequest ?? false,
+      summaryHtml: RollRequestChat._renderSummary(flags),
     };
 
     let html = await renderTemplate(template, templateData);

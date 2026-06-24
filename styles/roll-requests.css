@@ -102,6 +102,24 @@
   font-weight: bold;
 }
 
+/* Quick Action options execute on click — distinct, button-like styling */
+.arr-option-grid .request-option.arr-quick-option {
+  background: rgba(70, 136, 71, 0.18);
+  border-color: rgba(70, 136, 71, 0.5);
+  font-weight: bold;
+}
+
+.arr-option-grid .request-option.arr-quick-option:hover {
+  border-color: #468847;
+  box-shadow: 0 0 6px rgba(70, 136, 71, 0.5);
+  background: rgba(70, 136, 71, 0.3);
+}
+
+.arr-quick-icon {
+  font-size: 10px;
+  color: #468847;
+}
+
 /* ============================================================
    Chat Card Styles
    ============================================================ */
@@ -151,6 +169,19 @@
   color: #666;
   padding: 2px 4px;
   font-size: 11px;
+}
+
+/* ---- Aggregate summary slot (registered summary formatters) ---- */
+
+.arr-summary {
+  margin: 4px 0;
+  padding: 4px 8px;
+  border: 1px solid #c0a060;
+  border-radius: 3px;
+  background: rgba(192, 160, 96, 0.12);
+  font-size: 12px;
+  color: #4b4a44;
+  text-align: center;
 }
 
 /* ---- Section Headers ---- */
@@ -474,6 +505,128 @@
   font-style: italic;
   color: #888;
   font-size: 11px;
+}
+
+/* Marker on player-owned NPC rows (right-clickable to exclude) */
+.arr-actor-npc-icon {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: #c0a060;
+  opacity: 0.8;
+}
+
+/* ============================================================
+   Excluded-Actor Manager (settings menu)
+   ============================================================ */
+
+.pf1-roll-requests.roll-request-blacklist .arr-blacklist {
+  padding: 4px 2px;
+}
+
+.arr-blacklist-hint {
+  font-size: 11px;
+  color: #ccc;
+  margin: 0 0 8px;
+}
+
+.arr-blacklist-empty {
+  font-style: italic;
+  color: #888;
+  font-size: 12px;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.arr-blacklist-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.arr-blacklist-row {
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border: 1px solid #888;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.arr-blacklist-missing {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.arr-blacklist-img {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 2px;
+  border: 1px solid #888;
+  object-fit: contain;
+  background: #0001;
+}
+
+.arr-blacklist-name {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arr-blacklist-remove {
+  flex: 0 0 auto;
+  width: auto;
+  font-size: 11px;
+  line-height: 20px;
+  padding: 0 8px;
+}
+
+/* ============================================================
+   Roll Options config (settings menu) + Quick Action actor popup
+   ============================================================ */
+
+.pf1-roll-requests.roll-options-config .arr-options-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px;
+}
+
+.arr-config-hint {
+  font-size: 11px;
+  color: #ccc;
+  margin: 2px 0 6px;
+}
+
+.arr-config-row {
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.arr-config-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.arr-config-name {
+  flex: 1;
+}
+
+.arr-quick-actor-select {
+  padding: 2px 0;
+}
+
+.arr-quick-select-prompt {
+  font-size: 12px;
+  margin: 0 0 6px;
 }
 
 /* ============================================================
