@@ -108,6 +108,7 @@ game.pf1RollRequests.createRequest({
   flavor: "Diplomacy",  // optional flavor text
   includeAid: true,     // include Aid Another section (default: true; forced off for saves and dice)
   awaitResult: true,    // return a Promise with the roll result (single mode only)
+  onResult: (payload) => {},  // streaming callback fired on every roll (any mode; best for "multi")
 });
 
 // Targeted mode — pin specific actors/tokens to the card
@@ -140,6 +141,36 @@ Each `targetedActors` entry requires only `id` (the token document ID). All othe
 `game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place.
 
 When `awaitResult: true` is set (single-check mode only), `createRequest` returns a Promise that resolves with the roll result object once a player completes the roll, or `null` if the chat card is deleted before completion.
+
+#### Streaming results from a multi-check (`onResult`)
+
+A multi-check has no single "done" moment — any number of actors roll whenever they like — so instead of a Promise it takes an `onResult` callback, invoked on **every** roll completed on the card. `createRequest` also returns the created `ChatMessage` in `multi` mode, so you have a handle to read flags or correlate with the hook.
+
+```js
+const message = await game.pf1RollRequests.createRequest({
+  type: "skill", key: "kna", dc: 18, mode: "multi", includeAid: true,
+  flavor: "Identify Monster Components",
+  onResult: ({ result, results, dc }) => {
+    // `result` = the entry just rolled; `results` = every primary entry so far.
+    // Both carry a computed `passed` (total >= dc, or null when no DC).
+    const best = results.reduce((b, r) => (r.total > b.total ? r : b));
+    console.log(`Best so far: ${best.actorName} rolled ${best.total} (${best.passed ? "pass" : "fail"})`);
+  },
+});
+```
+
+Callback payload: `{ messageId, rollType, result, results, aidResults, dc }`. `rollType` distinguishes primary multi rolls (`"multi"`) from Aid Another rolls (`"multiAid"`). The callback runs on the GM client that created the request (even when a player performs the roll); like `awaitResult` it is held in memory, so a GM reload mid-sequence drops it (the card and its stored results persist).
+
+**Terminal event.** If the chat card is deleted, `onResult` fires one final time with `rollType: "cancelled"` and a `reason` (currently `"deleted"`), so you can tear down. This terminal payload is empty-shaped — `result: null`, `results: []`, `aidResults: []` — so always branch on `rollType` before reading the roll fields:
+
+```js
+onResult: (payload) => {
+  if (payload.rollType === "cancelled") return; // or clean up; payload.reason tells you why
+  // ...payload.result / payload.results are guaranteed populated here...
+}
+```
+
+(A GM reload still drops the callback silently — there's no memory left to fire from — so `"cancelled"` covers deletion, not reload.)
 
 ### Registering Quick Actions
 

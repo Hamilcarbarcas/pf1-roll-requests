@@ -154,12 +154,22 @@ Hooks.once("ready", () => {
    *   on each roll. Player visibility follows showResults. Currently displayed in multi-check cards.
    * @param {boolean} [options.awaitResult=false]  - If true, returns a Promise that resolves with the
    *   primary roll result once a player completes the roll. Only works with mode "single".
-   *   The promise resolves with an object: { messageId, total, actorName, actorImg, passed,
+   *   The promise resolves with an object: { messageId, total, actorId, actorName, actorImg, passed,
    *   naturalRoll, dc, formula, aidTotal, aidResults, notes }, or null if the card is deleted
    *   before the roll is completed.
+   * @param {(payload: object) => void} [options.onResult]  - Streaming callback invoked on every roll
+   *   completed on this card (works in any mode; best suited to "multi" where there is no single
+   *   resolution point). The payload is { messageId, rollType, result, results, aidResults, dc },
+   *   where `result` is the entry just rolled and `results` is every primary entry so far — both with
+   *   a computed `passed` (total >= dc, or null when no DC). Runs on the GM client that created the
+   *   request; like awaitResult it is in-memory, so a GM reload mid-roll drops it. If the card is
+   *   deleted, fires one final terminal event { rollType: "cancelled", reason: "deleted", result: null,
+   *   results: [], aidResults: [], dc } — branch on rollType before reading roll fields.
    *
-   * @returns {Promise<object|null>|undefined}  When awaitResult is true (single mode), returns
-   *   a Promise. Otherwise returns undefined.
+   * @returns {Promise<object|null>|ChatMessage|undefined}  When awaitResult is true (single mode),
+   *   returns a Promise that resolves with the result. In "multi" and "targeted" modes, returns the
+   *   created ChatMessage (a handle for reading flags or correlating with onResult / the
+   *   pf1RollRequests.rollComplete hook). Otherwise returns undefined.
    *
    * @example
    * // Request a Perception skill check, DC 15, public roll with results hidden
@@ -261,6 +271,13 @@ Hooks.once("ready", () => {
     const autoRoll = (mode === "targeted") ? (options.autoRoll ?? false) : false;
     const message = await RollRequestChat.createChatCard(requestData);
 
+    // Streaming callback: invoked on every roll on this card (any mode). Lets
+    // callers observe multi-check results as they come in (single-check rolls
+    // fire it too, in addition to any awaitResult promise).
+    if (typeof options.onResult === "function" && message) {
+      RollRequestChat.registerResultCallback(message.id, options.onResult);
+    }
+
     // Targeted mode: optionally auto-roll all targets, then return the message.
     if (mode === "targeted") {
       if (autoRoll && message) await RollRequestChat._bulkRollTargeted(message);
@@ -272,10 +289,17 @@ Hooks.once("ready", () => {
     if (awaitResult && mode === "single" && message) {
       return RollRequestChat.registerPendingResult(message.id);
     }
+
+    // Multi-check: return the message so callers have a handle to read flags
+    // (rolledActors) or correlate with the pf1RollRequests.rollComplete hook.
+    if (mode === "multi") return message;
   };
 });
 
-// Clean up pending result promises when a roll-request card is deleted
+// Clean up pending result promises and streaming callbacks when a card is deleted.
+// awaitResult resolves null; onResult gets a final "cancelled" terminal event.
 Hooks.on("deleteChatMessage", (message) => {
   RollRequestChat.cancelPendingResult(message.id);
+  const dc = message.flags?.[MODULE_ID]?.dc ?? null;
+  RollRequestChat.cancelResultCallback(message.id, "deleted", dc);
 });

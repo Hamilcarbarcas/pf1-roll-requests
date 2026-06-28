@@ -11,6 +11,14 @@ export class RollRequestChat {
   // Pending result promises for awaitResult API (messageId → { resolve })
   static _pendingResults = new Map();
 
+  // Streaming result callbacks for the onResult API (messageId → callback)
+  static _resultCallbacks = new Map();
+
+  // Per-message serialization chains (messageId → Promise). Ensures concurrent
+  // roll results (e.g. one player rolling two actors back-to-back over the
+  // socket) apply strictly one-at-a-time, each reading freshly-committed flags.
+  static _updateQueues = new Map();
+
   // ----------------------------------------------------------
   // Summary formatter registry (public API)
   // A registered formatter renders an aggregate line into the card and is
@@ -906,8 +914,35 @@ export class RollRequestChat {
   // Update the ChatMessage with a new roll result
   // ----------------------------------------------------------
 
-  static async _updateMessage(message, rollType, resultEntry, flags, opts = {}) {
+  static async _updateMessage(message, rollType, resultEntry, _flags, opts = {}) {
+    // Serialize all updates to the same message. Without this, two roll results
+    // arriving close together (the GM socket dispatcher does not await its
+    // handlers) both read the same pre-update flags and the second write clobbers
+    // the first — aid bonuses overwrite instead of stacking. Chaining the work
+    // per-message forces each call to read state committed by the prior one.
+    const prev = RollRequestChat._updateQueues.get(message.id) ?? Promise.resolve();
+    // The passed-in `flags` snapshot is stale once queued, so _applyUpdate
+    // re-reads fresh flags from the message at execution time. Swallow a prior
+    // failure so one bad update doesn't poison the chain for later rolls.
+    const next = prev
+      .catch(() => {})
+      .then(() => RollRequestChat._applyUpdate(message, rollType, resultEntry, opts));
+    RollRequestChat._updateQueues.set(message.id, next);
+    try {
+      await next;
+    } finally {
+      // Drop the chain once idle so the Map doesn't grow unbounded.
+      if (RollRequestChat._updateQueues.get(message.id) === next) {
+        RollRequestChat._updateQueues.delete(message.id);
+      }
+    }
+  }
+
+  static async _applyUpdate(message, rollType, resultEntry, opts = {}) {
     const { targetActorId } = opts;
+    // Re-read flags now (after any prior queued update has committed) so this
+    // update builds on the latest state rather than a snapshot taken at enqueue.
+    const flags = message.flags?.[MODULE_ID] ?? {};
     const updateData = {};
 
     if (rollType === "multi") {
@@ -987,6 +1022,27 @@ export class RollRequestChat {
       flags: updatedFlags,
     });
 
+    // Invoke the streaming onResult callback (if any) with a normalized,
+    // best-of-ready payload: every primary entry so far, each with a computed
+    // pass/fail, plus the entry just rolled.
+    const resultCallback = RollRequestChat._resultCallbacks.get(message.id);
+    if (resultCallback) {
+      const dc = updatedFlags.dc;
+      const withPass = (e) => ({ ...e, passed: dc != null ? e.total >= dc : null });
+      try {
+        resultCallback({
+          messageId: message.id,
+          rollType,
+          result: withPass(resultEntry),
+          results: Object.values(updatedFlags.rolledActors || {}).map(withPass),
+          aidResults: Object.values(updatedFlags.aidResults || {}),
+          dc,
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | onResult callback threw:`, err);
+      }
+    }
+
     // Resolve pending promise for single-check primary rolls
     if (rollType === "primary" && updatedFlags.mode === "single") {
       const pending = RollRequestChat._pendingResults.get(message.id);
@@ -996,6 +1052,7 @@ export class RollRequestChat {
         pending.resolve({
           messageId: message.id,
           total: resultEntry.total,
+          actorId: resultEntry.actorId,
           actorName: resultEntry.actorName,
           actorImg: resultEntry.actorImg,
           passed,
@@ -1738,6 +1795,48 @@ export class RollRequestChat {
     if (pending) {
       pending.resolve(null);
       RollRequestChat._pendingResults.delete(messageId);
+    }
+  }
+
+  /**
+   * Register a streaming result callback for a chat message, invoked on every
+   * roll completed on that card (see the onResult option of createRequest).
+   * @param {string} messageId
+   * @param {(payload: object) => void} callback
+   */
+  static registerResultCallback(messageId, callback) {
+    RollRequestChat._resultCallbacks.set(messageId, callback);
+  }
+
+  /**
+   * Cancel a streaming result callback (e.g. when the message is deleted).
+   * When a `reason` is given, the callback receives one final terminal event
+   * before being unregistered, so consumers can tear down. The terminal payload
+   * is full-shaped but empty (result: null, results/aidResults: []) so handlers
+   * that iterate those collections without checking rollType don't blow up.
+   * @param {string} messageId
+   * @param {string|null} [reason]  Why the stream ended (e.g. "deleted"). Omit
+   *   for a silent unregister.
+   * @param {number|null} [dc]      The card's DC, carried through for parity with
+   *   normal result payloads.
+   */
+  static cancelResultCallback(messageId, reason = null, dc = null) {
+    const callback = RollRequestChat._resultCallbacks.get(messageId);
+    RollRequestChat._resultCallbacks.delete(messageId);
+    if (callback && reason) {
+      try {
+        callback({
+          messageId,
+          rollType: "cancelled",
+          reason,
+          result: null,
+          results: [],
+          aidResults: [],
+          dc,
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | onResult terminal callback threw:`, err);
+      }
     }
   }
 
