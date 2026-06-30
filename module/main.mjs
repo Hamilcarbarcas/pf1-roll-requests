@@ -4,6 +4,10 @@
 
 import { RollRequestDialog } from "./apps/RollRequestDialog.mjs";
 import { RollRequestChat } from "./apps/RollRequestChat.mjs";
+import { SaveAutoRequest } from "./apps/SaveAutoRequest.mjs";
+import { BlacklistConfig } from "./apps/BlacklistConfig.mjs";
+import { RollOptionsConfig } from "./apps/RollOptionsConfig.mjs";
+import { registerQuickAction, unregisterQuickAction, getQuickActions } from "./roll-options.mjs";
 import { SocketHandler } from "./SocketHandler.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
@@ -11,6 +15,25 @@ const MODULE_ID = "pf1-roll-requests";
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing Pathfinder 1e Roll Requests`);
   game.pf1RollRequests = { MODULE_ID };
+
+  // Public API for other modules to contribute Quick Action buttons.
+  game.pf1RollRequests.registerQuickAction = registerQuickAction;
+  game.pf1RollRequests.unregisterQuickAction = unregisterQuickAction;
+  game.pf1RollRequests.getQuickActions = getQuickActions;
+
+  // Public API for registering card summary formatters (live aggregate displays).
+  game.pf1RollRequests.registerSummary = RollRequestChat.registerSummary;
+  game.pf1RollRequests.unregisterSummary = RollRequestChat.unregisterSummary;
+
+  // Setting to auto-convert PF1 attack messages with saves into roll-request cards
+  game.settings.register(MODULE_ID, "auto-save-request", {
+    name: "Auto-Request Saving Throws",
+    hint: "Automatically convert PF1 attack chat messages that include a saving throw into embedded targeted roll-request cards.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
 
   // Setting to toggle the token-control-bar button
   game.settings.register(MODULE_ID, "show-button", {
@@ -22,6 +45,60 @@ Hooks.once("init", () => {
     default: true,
     requiresReload: true,
   });
+
+  // Setting to allow Aid Another to grant scaling bonuses for high check results.
+  game.settings.register(MODULE_ID, "uncap-aid-another", {
+    name: "Uncap Aid Another",
+    hint: "Allows Aid Another checks to grant an additional +1 per for every 5 points the result exceeds 10.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
+  // Persistent list of actor ids excluded from the Selection Check prompt list.
+  game.settings.register(MODULE_ID, "npc-blacklist", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  });
+
+  // Settings-menu entry to view and restore excluded actors.
+  game.settings.registerMenu(MODULE_ID, "npc-blacklist-menu", {
+    name: "Excluded Actors",
+    label: "Manage Excluded Actors",
+    hint: "View and restore player-owned NPCs that have been excluded from the Selection Check prompt list.",
+    icon: "fa-solid fa-user-slash",
+    type: BlacklistConfig,
+    restricted: true,
+  });
+
+  // Hidden roll categories in the Roll Request dialog.
+  game.settings.register(MODULE_ID, "excluded-categories", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  });
+
+  // Hidden Quick Actions in the Roll Request dialog.
+  game.settings.register(MODULE_ID, "excluded-quick-actions", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  });
+
+  // Settings-menu entry to toggle categories and Quick Actions.
+  game.settings.registerMenu(MODULE_ID, "roll-options-menu", {
+    name: "Roll Categories & Quick Actions",
+    label: "Configure Roll Options",
+    hint: "Show or hide entire roll categories and individual Quick Actions in the Roll Request dialog.",
+    icon: "fa-solid fa-sliders",
+    type: RollOptionsConfig,
+    restricted: true,
+  });
 });
 
 Hooks.once("ready", () => {
@@ -31,6 +108,7 @@ Hooks.once("ready", () => {
 
 // ---- Render interactive elements on chat cards ----
 Hooks.on("renderChatMessageHTML", (message, html, data) => {
+  SaveAutoRequest.onRenderChatMessage(message, html);
   RollRequestChat.onRenderChatMessage(message, html, data);
 });
 
@@ -54,6 +132,11 @@ Hooks.on("getSceneControlButtons", (controls) => {
 
 // Public API for macros: `game.pf1RollRequests.requestRoll()`
 Hooks.once("ready", () => {
+  game.pf1RollRequests.bulkRollTargeted = async (message) => {
+    if (!game.user.isGM) return;
+    return RollRequestChat._bulkRollTargeted(message);
+  };
+
   game.pf1RollRequests.requestRoll = () => {
     if (!game.user.isGM) {
       ui.notifications.warn("Only the GM can create roll requests.");
@@ -76,14 +159,27 @@ Hooks.once("ready", () => {
    * @param {string} [options.rollMode="roll"]    - "roll", "gmroll", or "blindroll"
    * @param {string} [options.flavor=""]          - Flavor text
    * @param {boolean} [options.includeAid=true]   - Whether Aid Another is included (single mode only; forced off for dice)
+   * @param {string} [options.summaryKey]         - Key of a summary formatter registered via
+   *   game.pf1RollRequests.registerSummary(). Renders a live aggregate line into the card, recomputed
+   *   on each roll. Player visibility follows showResults. Currently displayed in multi-check cards.
    * @param {boolean} [options.awaitResult=false]  - If true, returns a Promise that resolves with the
    *   primary roll result once a player completes the roll. Only works with mode "single".
-   *   The promise resolves with an object: { messageId, total, actorName, actorImg, passed,
+   *   The promise resolves with an object: { messageId, total, actorId, actorName, actorImg, passed,
    *   naturalRoll, dc, formula, aidTotal, aidResults, notes }, or null if the card is deleted
    *   before the roll is completed.
+   * @param {(payload: object) => void} [options.onResult]  - Streaming callback invoked on every roll
+   *   completed on this card (works in any mode; best suited to "multi" where there is no single
+   *   resolution point). The payload is { messageId, rollType, result, results, aidResults, dc },
+   *   where `result` is the entry just rolled and `results` is every primary entry so far — both with
+   *   a computed `passed` (total >= dc, or null when no DC). Runs on the GM client that created the
+   *   request; like awaitResult it is in-memory, so a GM reload mid-roll drops it. If the card is
+   *   deleted, fires one final terminal event { rollType: "cancelled", reason: "deleted", result: null,
+   *   results: [], aidResults: [], dc } — branch on rollType before reading roll fields.
    *
-   * @returns {Promise<object|null>|undefined}  When awaitResult is true (single mode), returns
-   *   a Promise. Otherwise returns undefined.
+   * @returns {Promise<object|null>|ChatMessage|undefined}  When awaitResult is true (single mode),
+   *   returns a Promise that resolves with the result. In "multi" and "targeted" modes, returns the
+   *   created ChatMessage (a handle for reading flags or correlating with onResult / the
+   *   pf1RollRequests.rollComplete hook). Otherwise returns undefined.
    *
    * @example
    * // Request a Perception skill check, DC 15, public roll with results hidden
@@ -141,7 +237,26 @@ Hooks.once("ready", () => {
     const showResults = options.showResults ?? false;
     const rollMode = options.rollMode ?? "roll";
     const flavor = options.flavor ?? "";
-    const includeAid = type === "dice" ? false : (options.includeAid ?? true);
+    const includeAid = (type === "dice" || type === "save") ? false : (options.includeAid ?? true);
+    const targetedActors = options.targetedActors ?? [];
+
+    if (mode === "targeted" && targetedActors.length === 0) {
+      ui.notifications.error("createRequest with mode 'targeted' requires a non-empty targetedActors array.");
+      return;
+    }
+
+    // Auto-populate missing entry fields from the canvas token document.
+    if (mode === "targeted") {
+      for (const entry of targetedActors) {
+        const tokenDoc = canvas.tokens?.get(entry.id)?.document;
+        if (tokenDoc) {
+          entry.tokenUUID ??= tokenDoc.uuid;
+          entry.name     ??= tokenDoc.name;
+          entry.img      ??= tokenDoc.texture?.src ?? tokenDoc.actor?.img;
+          entry.isHidden ??= tokenDoc.hidden ?? false;
+        }
+      }
+    }
 
     const requestData = {
       mode,
@@ -152,23 +267,49 @@ Hooks.once("ready", () => {
       flavor,
       includeAid,
       request: { type, key, name },
+      summaryKey: options.summaryKey ?? null,
       rolledActors: {},
       aidResults: {},
       aidTotal: 0,
+      targetedActors,
+      actorResults: {},
+      actorAidResults: {},
+      usedActorIds: [],
     };
 
     const awaitResult = options.awaitResult ?? false;
+    const autoRoll = (mode === "targeted") ? (options.autoRoll ?? false) : false;
     const message = await RollRequestChat.createChatCard(requestData);
+
+    // Streaming callback: invoked on every roll on this card (any mode). Lets
+    // callers observe multi-check results as they come in (single-check rolls
+    // fire it too, in addition to any awaitResult promise).
+    if (typeof options.onResult === "function" && message) {
+      RollRequestChat.registerResultCallback(message.id, options.onResult);
+    }
+
+    // Targeted mode: optionally auto-roll all targets, then return the message.
+    if (mode === "targeted") {
+      if (autoRoll && message) await RollRequestChat._bulkRollTargeted(message);
+      return message;
+    }
 
     // If awaitResult is requested for a single-check, return a Promise
     // that resolves when the primary roll is completed.
     if (awaitResult && mode === "single" && message) {
       return RollRequestChat.registerPendingResult(message.id);
     }
+
+    // Multi-check: return the message so callers have a handle to read flags
+    // (rolledActors) or correlate with the pf1RollRequests.rollComplete hook.
+    if (mode === "multi") return message;
   };
 });
 
-// Clean up pending result promises when a roll-request card is deleted
+// Clean up pending result promises and streaming callbacks when a card is deleted.
+// awaitResult resolves null; onResult gets a final "cancelled" terminal event.
 Hooks.on("deleteChatMessage", (message) => {
   RollRequestChat.cancelPendingResult(message.id);
+  const dc = message.flags?.[MODULE_ID]?.dc ?? null;
+  RollRequestChat.cancelResultCallback(message.id, "deleted", dc);
 });

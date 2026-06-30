@@ -11,6 +11,72 @@ export class RollRequestChat {
   // Pending result promises for awaitResult API (messageId → { resolve })
   static _pendingResults = new Map();
 
+  // Streaming result callbacks for the onResult API (messageId → callback)
+  static _resultCallbacks = new Map();
+
+  // Per-message serialization chains (messageId → Promise). Ensures concurrent
+  // roll results (e.g. one player rolling two actors back-to-back over the
+  // socket) apply strictly one-at-a-time, each reading freshly-committed flags.
+  static _updateQueues = new Map();
+
+  // ----------------------------------------------------------
+  // Summary formatter registry (public API)
+  // A registered formatter renders an aggregate line into the card and is
+  // recomputed on every roll. A request opts in via its `summaryKey`.
+  // ----------------------------------------------------------
+
+  static _summaryFormatters = new Map();
+
+  /**
+   * Register a summary formatter. The formatter receives the card's current
+   * flags and returns an HTML string (or "" for nothing) shown in the card's
+   * summary slot, recomputed on each roll.
+   *
+   * @param {string} key
+   * @param {(flags: object) => string} formatter
+   * @returns {string} The registered key.
+   */
+  static registerSummary(key, formatter) {
+    if (typeof key !== "string" || !key) {
+      throw new Error(`${MODULE_ID} | registerSummary requires a non-empty string 'key'.`);
+    }
+    if (typeof formatter !== "function") {
+      throw new Error(`${MODULE_ID} | Summary '${key}' requires a formatter function.`);
+    }
+    RollRequestChat._summaryFormatters.set(key, formatter);
+    return key;
+  }
+
+  /** Remove a registered summary formatter. */
+  static unregisterSummary(key) {
+    return RollRequestChat._summaryFormatters.delete(key);
+  }
+
+  /**
+   * Build the summary-slot HTML for a card, or "" when there's no summary.
+   * Visibility follows result visibility: when `showResults` is false the slot
+   * is wrapped in `.gm-only`, so players see it only when results are public.
+   *
+   * @param {object} flags - The card's current flag state.
+   * @returns {string}
+   */
+  static _renderSummary(flags) {
+    const key = flags.summaryKey;
+    if (!key) return "";
+    const formatter = RollRequestChat._summaryFormatters.get(key);
+    if (!formatter) return "";
+    let inner;
+    try {
+      inner = formatter(flags);
+    } catch (err) {
+      console.error(`${MODULE_ID} | Summary formatter '${key}' threw:`, err);
+      return "";
+    }
+    if (inner == null || inner === "") return "";
+    const gmOnly = flags.showResults ? "" : " gm-only";
+    return `<div class="arr-summary${gmOnly}">${inner}</div>`;
+  }
+
   // ----------------------------------------------------------
   // Create and post the chat card
   // ----------------------------------------------------------
@@ -42,6 +108,8 @@ export class RollRequestChat {
       includeAid: requestData.includeAid,
       modeName,
       targetedActors: requestData.targetedActors ?? [],
+      isSaveRequest: requestData.isSaveRequest ?? false,
+      summaryHtml: RollRequestChat._renderSummary(requestData),
     };
 
     const html = await renderTemplate(template, templateData);
@@ -120,13 +188,25 @@ export class RollRequestChat {
 
   static _bindMultiCheck(message, card, flags) {
     const rollBtn = card.querySelector('.arr-roll-btn[data-action="roll"]');
-    if (!rollBtn) return;
+    if (rollBtn) {
+      rollBtn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        await RollRequestChat._handleRoll(message, flags, "multi");
+      });
+    }
 
-    rollBtn.addEventListener("click", async (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      await RollRequestChat._handleRoll(message, flags, "multi");
-    });
+    if (flags.includeAid) {
+      const aidBtn = card.querySelector('.arr-roll-btn[data-action="rollMultiAid"]');
+      if (aidBtn) {
+        aidBtn.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          await RollRequestChat._handleRoll(message, flags, "multiAid");
+        });
+      }
+      RollRequestChat._updateAidDisplay(card, flags, false, flags.aidTotal || 0);
+    }
   }
 
   // ----------------------------------------------------------
@@ -167,8 +247,16 @@ export class RollRequestChat {
     card.querySelectorAll('.arr-roll-btn[data-action="rollTargeted"]').forEach(btn => {
       const targetActorId = btn.dataset.actorId;
 
-      // Dim the button for users who don't own this actor
-      if (!game.user.isGM && game.user.character?.id !== targetActorId) {
+      // Dim the button for users who don't own this actor. Resolve ownership via
+      // the token (tokenUUID → actor.isOwner) whenever present — this matches the
+      // permission check in _handleRoll and works for any targeted request, not
+      // just saves. Fall back to the assigned-character id only when there is no
+      // token reference (e.g. dialog-created requests with linked actors).
+      const entry = flags.targetedActors?.find(t => t.id === targetActorId);
+      const ownedByUser = entry?.tokenUUID
+        ? (fromUuidSync(entry.tokenUUID)?.actor?.isOwner ?? false)
+        : game.user.character?.id === targetActorId;
+      if (!game.user.isGM && !ownedByUser) {
         btn.classList.add("arr-roll-btn-disabled");
       }
 
@@ -193,6 +281,229 @@ export class RollRequestChat {
     for (const block of card.querySelectorAll(".arr-targeted-block")) {
       RollRequestChat._updateTargetedAidDisplay(card, flags, block.dataset.actorId);
     }
+
+    // Save-request specific: compact styling + per-user visibility tiers + GM controls
+    if (flags.isSaveRequest) {
+      card.classList.add("arr-save-request");
+
+      if (!game.user.isGM) {
+        // Tier 1 (hidden): remove entirely. Tier 2 (visible, sub-observer): portrait grid only.
+        const portraitTargets = [];
+        for (const target of (flags.targetedActors || [])) {
+          const block = card.querySelector(`.arr-targeted-block[data-actor-id="${target.id}"]`);
+          const dropBlock = () => {
+            if (!block) return;
+            const next = block.nextElementSibling;
+            if (next?.classList.contains("arr-divider")) next.remove();
+            block.remove();
+          };
+          if (target.isHidden) { dropBlock(); continue; }
+          const tokenDoc = fromUuidSync(target.tokenUUID);
+          const hasObserver = tokenDoc?.actor?.testUserPermission(game.user, "OBSERVER") ?? false;
+          if (!hasObserver) { dropBlock(); portraitTargets.push(target); }
+        }
+        if (portraitTargets.length) {
+          const grid = document.createElement("div");
+          grid.className = "arr-save-portrait-grid";
+          grid.style.cssText = "display:flex;flex-wrap:wrap;justify-content:center;gap:3px;padding:4px 0 2px;border-top:1px solid #ddd;margin-top:2px;";
+          for (const target of portraitTargets) {
+            const img = document.createElement("img");
+            img.src = target.img;
+            img.alt = "";
+            img.className = "arr-save-portrait-only";
+            img.style.cssText = "display:inline-block;width:56px;height:56px;max-width:56px;flex:0 0 56px;object-fit:contain;border-radius:2px;border:1px solid #aaa;background:rgba(0,0,0,0.1);opacity:0.7;";
+            grid.appendChild(img);
+          }
+          (card.querySelector(".arr-card-body") ?? card).appendChild(grid);
+        }
+      }
+
+      if (game.user.isGM) {
+        // Click full-row portraits to select that token on canvas
+        for (const target of (flags.targetedActors || [])) {
+          const block = card.querySelector(`.arr-targeted-block[data-actor-id="${target.id}"]`);
+          if (!block) continue;
+          const img = block.querySelector(".arr-actor-img");
+          if (!img) continue;
+          img.style.cursor = "pointer";
+          img.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const tokenDoc = fromUuidSync(target.tokenUUID);
+            if (!tokenDoc?.object) return;
+            canvas.tokens.releaseAll();
+            tokenDoc.object.control();
+          });
+        }
+
+        if ((flags.targetedActors?.length ?? 0) > 1) {
+          // Roll All / Roll NPCs bulk buttons at top of card body
+          const bulkBtns = document.createElement("div");
+          bulkBtns.className = "arr-save-bulk-btns flexrow";
+          bulkBtns.innerHTML =
+            `<button type="button" class="arr-save-sel-btn" data-bulk="all">Roll All</button>` +
+            `<button type="button" class="arr-save-sel-btn" data-bulk="npcs">Roll NPCs</button>`;
+          const body = card.querySelector(".arr-card-body");
+          if (body) body.insertBefore(bulkBtns, body.firstChild);
+          else card.prepend(bulkBtns);
+          bulkBtns.querySelectorAll("[data-bulk]").forEach(btn => {
+            btn.addEventListener("click", async (e) => {
+              e.preventDefault();
+              await RollRequestChat._bulkRollSave(message, btn.dataset.bulk);
+            });
+          });
+
+          // Select All / Passed / Failed footer
+          const selectFooter = document.createElement("div");
+          selectFooter.className = "arr-save-select-footer flexrow";
+          selectFooter.innerHTML =
+            `<button type="button" class="arr-save-sel-btn" data-select="all">Select All</button>` +
+            `<button type="button" class="arr-save-sel-btn" data-select="passed">Select Passed</button>` +
+            `<button type="button" class="arr-save-sel-btn" data-select="failed">Select Failed</button>`;
+          card.appendChild(selectFooter);
+          selectFooter.querySelectorAll("[data-select]").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+              e.preventDefault();
+              const currentFlags = message.flags?.[MODULE_ID];
+              if (currentFlags) RollRequestChat._selectSaveTokens(currentFlags, btn.dataset.select);
+            });
+          });
+        }
+      }
+
+      // Combined row-click dropdown (defenses + post-roll details) — only the
+      // blocks surviving above (OBSERVER+/GM)
+      RollRequestChat._bindTargetedExpand(card, flags);
+    }
+
+    // Blind-roll targeted (non-save): GM-only Roll All button
+    if (game.user.isGM && flags.rollMode === "blindroll" && !flags.isSaveRequest) {
+      const bulkBtns = document.createElement("div");
+      bulkBtns.className = "arr-save-bulk-btns flexrow";
+      bulkBtns.innerHTML = `<button type="button" class="arr-save-sel-btn">Roll All</button>`;
+      const body = card.querySelector(".arr-card-body");
+      if (body) body.insertBefore(bulkBtns, body.firstChild);
+      else card.prepend(bulkBtns);
+      bulkBtns.querySelector("button").addEventListener("click", async (e) => {
+        e.preventDefault();
+        await RollRequestChat._bulkRollTargeted(message);
+      });
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Per-target combined dropdown (save requests only)
+  // ----------------------------------------------------------
+
+  // Bind a click on the whole actor row to toggle the combined dropdown:
+  // post-roll roll details (when present) on top, defenses below. Works
+  // pre-roll too (defenses only). Sub-observer blocks are already removed for
+  // non-GMs, so anything present here is OBSERVER+ (or GM) — no extra check.
+  static _bindTargetedExpand(card, flags) {
+    for (const block of card.querySelectorAll(".arr-targeted-block")) {
+      const actorId = block.dataset.actorId;
+      const row = block.querySelector(".arr-targeted-actor-row");
+      const panel = block.querySelector(":scope > .arr-targeted-defenses");
+      if (!row || !panel) continue;
+      const entry = flags.targetedActors?.find(t => t.id === actorId);
+
+      const rotateIcons = (open) => {
+        for (const icon of block.querySelectorAll(".arr-defenses-icon, .arr-targeted-actor-row .arr-expand-icon")) {
+          icon.classList.toggle("fa-chevron-up", open);
+          icon.classList.toggle("fa-chevron-down", !open);
+        }
+      };
+
+      row.style.cursor = "pointer";
+      row.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+
+        // Build defenses once, lazily, from the live actor on this client.
+        if (!panel.dataset.loaded) {
+          const actor = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID)?.actor : null;
+          if (!actor) return void ui.notifications.warn("Could not load target defenses.");
+          try {
+            panel.innerHTML = await RollRequestChat._buildDefensesPanel(actor);
+            panel.dataset.loaded = "1";
+          } catch (err) {
+            console.error("pf1-roll-requests | failed to build defenses panel", err);
+            return;
+          }
+        }
+
+        const open = block.classList.toggle("arr-expanded");
+        rotateIcons(open);
+      });
+    }
+  }
+
+  // Build the compact defenses panel HTML for an actor. Mirrors the data
+  // assembly in PF1's actor.displayDefenseCard (which can't be used directly
+  // because it requires ownership). All reads are permission-free.
+  static async _buildDefensesPanel(actor) {
+    const rollData = actor.getRollData();
+    const sys = actor.system;
+    const formatTextNotes = (notes) => notes?.split(/[\n\r]+/).map((text) => ({ text })) ?? [];
+
+    const [acNotes, cmdNotes, srNotes, saveNotes] = await Promise.all([
+      actor.getContextNotesParsed("ac", { rollData }),
+      actor.getContextNotesParsed("cmd", { rollData }),
+      actor.getContextNotesParsed("sr", { rollData }),
+      actor.getContextNotesParsed("allSavingThrows", { rollData }),
+    ]);
+    if (sys.attributes?.acNotes) acNotes.push(...formatTextNotes(sys.attributes.acNotes));
+    if (sys.attributes?.cmdNotes) cmdNotes.push(...formatTextNotes(sys.attributes.cmdNotes));
+    if (sys.attributes?.srNotes) srNotes.push(...formatTextNotes(sys.attributes.srNotes));
+    if (sys.attributes?.saveNotes) saveNotes.push(...formatTextNotes(sys.attributes.saveNotes));
+
+    // Damage reduction / energy resistance (string maps keyed by type)
+    const drNotes = Object.values(actor.parseResistances?.("dr") ?? {}).map((text) => ({ text }));
+    const erNotes = Object.values(actor.parseResistances?.("eres") ?? {}).map((text) => ({ text }));
+
+    // Active conditions flagged for defense display
+    const conditions = Object.entries(sys.conditions ?? {})
+      .filter(([, enabled]) => enabled)
+      .map(([id]) => pf1.registry?.conditions?.get(id))
+      .filter((c) => c?.showInDefense)
+      .map((c) => ({ text: c.name }));
+
+    const ac = sys.attributes?.ac ?? {};
+    const cmd = sys.attributes?.cmd ?? {};
+    const saves = sys.attributes?.savingThrows ?? {};
+    const sr = sys.attributes?.sr?.total;
+
+    const sign = (n) => (Number(n) >= 0 ? `+${n}` : `${n}`);
+    const stat = (label, val) =>
+      `<span class="arr-def-stat"><span class="arr-def-label">${label}</span><span class="arr-def-val">${val}</span></span>`;
+    const noteGroup = (label, notes) => {
+      if (!notes?.length) return "";
+      const tags = notes
+        .map((n) => `<span class="arr-def-tag"${n.source ? ` title="${n.source}"` : ""}>${n.text}</span>`)
+        .join("");
+      return `<div class="arr-def-notes"><span class="arr-def-notes-label">${label}</span><div class="arr-def-tags">${tags}</div></div>`;
+    };
+
+    let html = `<div class="arr-defenses-content">`;
+    html += `<div class="arr-def-header">Defenses</div>`;
+
+    html += `<div class="arr-def-row">${stat("AC", ac.normal?.total ?? 0)}${stat("Touch", ac.touch?.total ?? 0)}${stat("FF", ac.flatFooted?.total ?? 0)}</div>`;
+    html += noteGroup("AC Notes", acNotes);
+
+    let cmdRow = `${stat("CMD", cmd.total ?? 0)}${stat("FF CMD", cmd.flatFootedTotal ?? 0)}`;
+    if (sr) cmdRow += stat("SR", sr);
+    html += `<div class="arr-def-row">${cmdRow}</div>`;
+    html += noteGroup("CMD Notes", cmdNotes);
+    if (sr) html += noteGroup("SR Notes", srNotes);
+
+    html += `<div class="arr-def-row">${stat("Fort", sign(saves.fort?.total ?? 0))}${stat("Ref", sign(saves.ref?.total ?? 0))}${stat("Will", sign(saves.will?.total ?? 0))}</div>`;
+    html += noteGroup("Save Notes", saveNotes);
+
+    html += noteGroup("Damage Reduction", drNotes);
+    html += noteGroup("Energy Resistance", erNotes);
+    html += noteGroup("Conditions", conditions);
+
+    html += `</div>`;
+    return html;
   }
 
   // ----------------------------------------------------------
@@ -215,10 +526,18 @@ export class RollRequestChat {
     // --- Acquire actor and tokenId based on roll type ---
     let actor, tokenId;
     if (rollType === "targeted") {
-      // Actor is fixed — it's the specific targeted actor regardless of selection
-      actor = game.actors.get(targetActorId);
+      // If the target entry has a tokenUUID, look up via the token (handles unlinked tokens).
+      // Otherwise fall back to actor ID lookup (dialog-created requests with linked actors).
+      const entry = currentFlags.targetedActors?.find(t => t.id === targetActorId);
+      if (entry?.tokenUUID) {
+        const tokenDoc = fromUuidSync(entry.tokenUUID);
+        actor = tokenDoc?.actor;
+        tokenId = tokenDoc?.id ?? null;
+      } else {
+        actor = game.actors.get(targetActorId);
+        tokenId = actor?.getActiveTokens?.()?.[0]?.id ?? null;
+      }
       if (!actor) { ui.notifications.warn("Target actor not found."); return; }
-      tokenId = actor.getActiveTokens?.()?.[0]?.id ?? null;
     } else {
       // All other roll types use the currently controlled token
       const token = canvas.tokens.controlled[0];
@@ -230,8 +549,12 @@ export class RollRequestChat {
 
     // --- Permission check: targeted primary rolls are actor-specific ---
     if (rollType === "targeted" && !game.user.isGM) {
-      if (game.user.character?.id !== targetActorId) {
-        ui.notifications.warn("You can only roll for your own character.");
+      const entry = currentFlags.targetedActors?.find(t => t.id === targetActorId);
+      const canRoll = entry?.tokenUUID ? actor.isOwner : game.user.character?.id === targetActorId;
+      if (!canRoll) {
+        ui.notifications.warn(entry?.tokenUUID
+          ? "You can only roll for tokens you own."
+          : "You can only roll for your own character.");
         return;
       }
     }
@@ -245,8 +568,16 @@ export class RollRequestChat {
     // --- Duplicate / one-action-per-actor checks ---
     if (rollType === "multi") {
       const rolledActors = currentFlags.rolledActors || {};
-      if (rolledActors[tokenId]) {
-        ui.notifications.warn(`${actor.name} has already rolled.`);
+      const aidResults = currentFlags.aidResults || {};
+      if (rolledActors[tokenId] || aidResults[tokenId]) {
+        ui.notifications.warn(`${actor.name} has already used their action in this request.`);
+        return;
+      }
+    } else if (rollType === "multiAid") {
+      const rolledActors = currentFlags.rolledActors || {};
+      const aidResults = currentFlags.aidResults || {};
+      if (rolledActors[tokenId] || aidResults[tokenId]) {
+        ui.notifications.warn(`${actor.name} has already used their action in this request.`);
         return;
       }
     } else if (rollType === "aid") {
@@ -263,7 +594,7 @@ export class RollRequestChat {
       }
     } else if (rollType === "targeted") {
       const usedActorIds = currentFlags.usedActorIds || [];
-      if (usedActorIds.includes(actor.id)) {
+      if (usedActorIds.includes(targetActorId)) {
         ui.notifications.warn(`${actor.name} has already used their action in this request.`);
         return;
       }
@@ -287,10 +618,10 @@ export class RollRequestChat {
     }
 
     // --- Validation: Natural-20 feasibility check ---
-    if (dc != null && request.type !== "dice") {
+    if (dc != null && request.type !== "dice" && request.type !== "save") {
       const maxPossible = RollRequestChat._getMaxRoll(actor, request);
       if (maxPossible !== null && maxPossible < dc) {
-        const msg = (rollType === "aid" || rollType === "targetedAid")
+        const msg = (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid")
           ? `${actor.name}: Success not possible, unable to aid another.`
           : `${actor.name} cannot succeed on this check, even with a natural 20.`;
         ui.notifications.warn(msg);
@@ -307,6 +638,10 @@ export class RollRequestChat {
         rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal);
       } else if (rollType === "primary" && currentFlags.includeAid) {
         rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc);
+      } else if (rollType === "multi" && currentFlags.includeAid) {
+        // Use the current unredeemed aid pool (resets to 0 after each primary roll)
+        const aidTotal = currentFlags.aidTotal || 0;
+        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal);
       } else {
         rollResult = await RollRequestChat._performRoll(actor, request, dc);
       }
@@ -327,6 +662,7 @@ export class RollRequestChat {
     const resultEntry = {
       tokenId,
       actorId: actor.id,
+      resultKey: rollType === "targeted" ? targetActorId : actor.id,
       actorName: actor.name,
       actorImg: actor.img,
       total: rollResult.total,
@@ -337,10 +673,11 @@ export class RollRequestChat {
     };
 
     // For Aid rolls: calculate the bonus contributed
-    if (rollType === "aid" || rollType === "targetedAid") {
+    if (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid") {
       if (resultEntry.total >= 10) {
-        const overAmount = resultEntry.total - 10;
-        const extraBonus = Math.floor(overAmount / 5);
+        // Scaling +1 per 5 over the DC only applies when the uncap setting is enabled.
+        const uncapped = game.settings.get(MODULE_ID, "uncap-aid-another");
+        const extraBonus = uncapped ? Math.floor((resultEntry.total - 10) / 5) : 0;
         resultEntry.aidBonus = 2 + extraBonus;
         resultEntry.aidSuccess = true;
       } else {
@@ -367,10 +704,11 @@ export class RollRequestChat {
   // Perform a silent roll (no chat message)
   // ----------------------------------------------------------
 
-  static async _performRoll(actor, request, dc) {
+  static async _performRoll(actor, request, dc, extraOpts = {}) {
     const opts = {
       skipDialog: false,
       chatMessage: false,
+      ...extraOpts,
     };
     if (dc != null) opts.dc = dc;
 
@@ -577,14 +915,58 @@ export class RollRequestChat {
   // Update the ChatMessage with a new roll result
   // ----------------------------------------------------------
 
-  static async _updateMessage(message, rollType, resultEntry, flags, opts = {}) {
+  static async _updateMessage(message, rollType, resultEntry, _flags, opts = {}) {
+    // Serialize all updates to the same message. Without this, two roll results
+    // arriving close together (the GM socket dispatcher does not await its
+    // handlers) both read the same pre-update flags and the second write clobbers
+    // the first — aid bonuses overwrite instead of stacking. Chaining the work
+    // per-message forces each call to read state committed by the prior one.
+    const prev = RollRequestChat._updateQueues.get(message.id) ?? Promise.resolve();
+    // The passed-in `flags` snapshot is stale once queued, so _applyUpdate
+    // re-reads fresh flags from the message at execution time. Swallow a prior
+    // failure so one bad update doesn't poison the chain for later rolls.
+    const next = prev
+      .catch(() => {})
+      .then(() => RollRequestChat._applyUpdate(message, rollType, resultEntry, opts));
+    RollRequestChat._updateQueues.set(message.id, next);
+    try {
+      await next;
+    } finally {
+      // Drop the chain once idle so the Map doesn't grow unbounded.
+      if (RollRequestChat._updateQueues.get(message.id) === next) {
+        RollRequestChat._updateQueues.delete(message.id);
+      }
+    }
+  }
+
+  static async _applyUpdate(message, rollType, resultEntry, opts = {}) {
     const { targetActorId } = opts;
+    // Re-read flags now (after any prior queued update has committed) so this
+    // update builds on the latest state rather than a snapshot taken at enqueue.
+    const flags = message.flags?.[MODULE_ID] ?? {};
     const updateData = {};
 
     if (rollType === "multi") {
       const rolledActors = foundry.utils.deepClone(flags.rolledActors || {});
       rolledActors[resultEntry.tokenId] = resultEntry;
       updateData[`flags.${MODULE_ID}.rolledActors`] = rolledActors;
+
+      if (flags.includeAid) {
+        // Mark all currently unredeemed aid entries as consumed and reset the pool
+        const aidResults = foundry.utils.deepClone(flags.aidResults || {});
+        for (const entry of Object.values(aidResults)) {
+          if (!entry.consumed) entry.consumed = true;
+        }
+        updateData[`flags.${MODULE_ID}.aidResults`] = aidResults;
+        updateData[`flags.${MODULE_ID}.aidTotal`] = 0;
+      }
+
+    } else if (rollType === "multiAid") {
+      const aidResults = foundry.utils.deepClone(flags.aidResults || {});
+      aidResults[resultEntry.tokenId] = resultEntry;
+      updateData[`flags.${MODULE_ID}.aidResults`] = aidResults;
+      const newAidTotal = (flags.aidTotal || 0) + (resultEntry.aidBonus || 0);
+      updateData[`flags.${MODULE_ID}.aidTotal`] = newAidTotal;
 
     } else if (rollType === "aid") {
       const aidResults = foundry.utils.deepClone(flags.aidResults || {});
@@ -599,11 +981,12 @@ export class RollRequestChat {
 
     } else if (rollType === "targeted") {
       const actorResults = foundry.utils.deepClone(flags.actorResults || {});
-      actorResults[resultEntry.actorId] = resultEntry;
+      const resultKey = resultEntry.resultKey ?? resultEntry.actorId;
+      actorResults[resultKey] = resultEntry;
       updateData[`flags.${MODULE_ID}.actorResults`] = actorResults;
 
       const usedActorIds = [...(flags.usedActorIds || [])];
-      if (!usedActorIds.includes(resultEntry.actorId)) usedActorIds.push(resultEntry.actorId);
+      if (!usedActorIds.includes(resultKey)) usedActorIds.push(resultKey);
       updateData[`flags.${MODULE_ID}.usedActorIds`] = usedActorIds;
 
     } else if (rollType === "targetedAid") {
@@ -640,6 +1023,27 @@ export class RollRequestChat {
       flags: updatedFlags,
     });
 
+    // Invoke the streaming onResult callback (if any) with a normalized,
+    // best-of-ready payload: every primary entry so far, each with a computed
+    // pass/fail, plus the entry just rolled.
+    const resultCallback = RollRequestChat._resultCallbacks.get(message.id);
+    if (resultCallback) {
+      const dc = updatedFlags.dc;
+      const withPass = (e) => ({ ...e, passed: dc != null ? e.total >= dc : null });
+      try {
+        resultCallback({
+          messageId: message.id,
+          rollType,
+          result: withPass(resultEntry),
+          results: Object.values(updatedFlags.rolledActors || {}).map(withPass),
+          aidResults: Object.values(updatedFlags.aidResults || {}),
+          dc,
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | onResult callback threw:`, err);
+      }
+    }
+
     // Resolve pending promise for single-check primary rolls
     if (rollType === "primary" && updatedFlags.mode === "single") {
       const pending = RollRequestChat._pendingResults.get(message.id);
@@ -649,6 +1053,7 @@ export class RollRequestChat {
         pending.resolve({
           messageId: message.id,
           total: resultEntry.total,
+          actorId: resultEntry.actorId,
           actorName: resultEntry.actorName,
           actorImg: resultEntry.actorImg,
           passed,
@@ -692,6 +1097,8 @@ export class RollRequestChat {
       includeAid: flags.includeAid,
       modeName,
       targetedActors: flags.targetedActors ?? [],
+      isSaveRequest: flags.isSaveRequest ?? false,
+      summaryHtml: RollRequestChat._renderSummary(flags),
     };
 
     let html = await renderTemplate(template, templateData);
@@ -709,7 +1116,7 @@ export class RollRequestChat {
       await RollRequestChat._injectTargetedResults(card, flags);
     }
 
-    return card.outerHTML;
+    return (flags.pf1HeaderHtml ?? "") + card.outerHTML + (flags.pf1FooterHtml ?? "");
   }
 
   // ----------------------------------------------------------
@@ -717,16 +1124,38 @@ export class RollRequestChat {
   // ----------------------------------------------------------
 
   static async _injectMultiResults(card, flags) {
-    const list = card.querySelector(".arr-results-list");
-    if (!list) return;
-
-    const rolledActors = flags.rolledActors || {};
-    const dc = flags.dc;
-    const showResults = flags.showResults;
     const hideTotalFromPlayers = flags.rollMode === "publicblind";
 
-    for (const entry of Object.values(rolledActors)) {
-      list.insertAdjacentHTML("beforeend", await RollRequestChat._buildResultHTML(entry, dc, showResults, hideTotalFromPlayers));
+    // Primary roll results
+    const list = card.querySelector(".arr-results-list");
+    if (list) {
+      const rolledActors = flags.rolledActors || {};
+      const dc = flags.dc;
+      const showResults = flags.showResults;
+      for (const entry of Object.values(rolledActors)) {
+        list.insertAdjacentHTML("beforeend", await RollRequestChat._buildResultHTML(entry, dc, showResults, hideTotalFromPlayers));
+      }
+    }
+
+    if (flags.includeAid) {
+      // Aid results (all history; consumed ones are greyed via CSS class)
+      const aidList = card.querySelector(".arr-aid-results");
+      if (aidList) {
+        const aidResults = flags.aidResults || {};
+        for (const entry of Object.values(aidResults)) {
+          aidList.insertAdjacentHTML("beforeend", await RollRequestChat._buildAidResultHTML(entry, hideTotalFromPlayers));
+        }
+      }
+
+      // Aid bonus display (current unredeemed pool)
+      const aidTotal = flags.aidTotal || 0;
+      const bonusDisplay = card.querySelector(".arr-aid-bonus-display");
+      const bonusValue = card.querySelector(".arr-aid-bonus-value");
+      if (bonusDisplay && aidTotal > 0) {
+        if (hideTotalFromPlayers) bonusDisplay.classList.add("gm-only");
+        bonusDisplay.style.display = "inline";
+        if (bonusValue) bonusValue.textContent = `+${aidTotal}`;
+      }
     }
   }
 
@@ -790,6 +1219,7 @@ export class RollRequestChat {
         if (inlineDiv) {
           const passed = dc != null ? result.total >= dc : null;
           const passClass = passed === true ? "arr-pass" : passed === false ? "arr-fail" : "";
+          const detailsClass = hideTotalFromPlayers ? " gm-only" : "";
           let passFailHtml = "";
           if (passed === true) {
             passFailHtml = showResults
@@ -803,9 +1233,36 @@ export class RollRequestChat {
           const totalHtml = hideTotalFromPlayers
             ? `<span class="arr-total-value gm-only">${result.total}</span><span class="arr-total-value arr-player-only">?</span>`
             : `<span class="arr-total-value">${result.total}</span>`;
+
+          // Render roll details
+          let rollDetailsHtml = "";
+          if (result.rollData) {
+            try {
+              const roll = Roll.fromData(result.rollData);
+              rollDetailsHtml = await roll.render();
+            } catch (err) {
+              console.warn(`${MODULE_ID} | Could not render targeted roll details:`, err);
+            }
+          }
+          let notesHtml = "";
+          if (result.notes?.length) {
+            notesHtml = `<div class="arr-notes">${result.notes.map(n => `<span class="arr-note-tag">${n}</span>`).join("")}</div>`;
+          }
+          const hasDetails = !!(rollDetailsHtml || notesHtml);
+          const chevronHtml = hasDetails ? `<i class="fas fa-chevron-down arr-expand-icon${detailsClass}"></i>` : "";
+
           inlineDiv.className = `arr-inline-result arr-result-total ${passClass}`;
-          inlineDiv.innerHTML = `${totalHtml}${passFailHtml}`;
+          inlineDiv.innerHTML = `${totalHtml}${passFailHtml}${chevronHtml}`;
           inlineDiv.removeAttribute("style");
+
+          if (hasDetails) {
+            const actorRow = block.querySelector('.arr-targeted-actor-row');
+            if (actorRow) {
+              actorRow.insertAdjacentHTML("afterend",
+                `<div class="arr-roll-details arr-targeted-roll-details${detailsClass}">${rollDetailsHtml}${notesHtml}</div>`
+              );
+            }
+          }
         }
         if (rollBtn) rollBtn.style.display = "none";
       }
@@ -932,7 +1389,8 @@ export class RollRequestChat {
 
     const hasDetails = rollDetailsHtml || notesHtml;
     const detailsClass = hideTotalFromPlayers ? " gm-only" : "";
-    return `<li class="arr-result-entry arr-aid-entry flexrow" data-token-id="${entry.tokenId}">
+    const consumedClass = entry.consumed ? " arr-aid-consumed" : "";
+    return `<li class="arr-result-entry arr-aid-entry flexrow${consumedClass}" data-token-id="${entry.tokenId}">
       <div class="arr-result-row flexrow">
         <div class="arr-result-actor flexrow">
           <img class="arr-actor-img" src="${entry.actorImg}" alt="${entry.actorName}" />
@@ -1009,6 +1467,7 @@ export class RollRequestChat {
   static async _createAidResultElement(entry, hideTotalFromPlayers = false) {
     const li = document.createElement("li");
     li.classList.add("arr-result-entry", "arr-aid-entry", "flexrow");
+    if (entry.consumed) li.classList.add("arr-aid-consumed");
     li.dataset.tokenId = entry.tokenId;
 
     const showDetails = !hideTotalFromPlayers || game.user.isGM;
@@ -1068,6 +1527,18 @@ export class RollRequestChat {
         }
       }
 
+      if (flags.includeAid) {
+        const aidList = card.querySelector(".arr-aid-results");
+        if (aidList) {
+          aidList.innerHTML = "";
+          const aidResults = flags.aidResults || {};
+          for (const entry of Object.values(aidResults)) {
+            aidList.appendChild(await RollRequestChat._createAidResultElement(entry, hideTotalFromPlayers));
+          }
+        }
+        RollRequestChat._updateAidDisplay(card, flags, hideTotalFromPlayers, flags.aidTotal || 0);
+      }
+
     } else if (flags.mode === "single") {
       // Aid results
       const aidList = card.querySelector(".arr-aid-results");
@@ -1101,7 +1572,7 @@ export class RollRequestChat {
 
         // Inline primary result
         if (actorResults[actorId]) {
-          RollRequestChat._setInlineResult(block, actorResults[actorId], flags.dc, flags.showResults, hideTotalFromPlayers);
+          await RollRequestChat._setInlineResult(block, actorResults[actorId], flags.dc, flags.showResults, hideTotalFromPlayers);
         }
 
         // Aid results
@@ -1142,14 +1613,34 @@ export class RollRequestChat {
         if (icon) icon.classList.toggle("fa-chevron-down", !entry.classList.contains("arr-expanded"));
       });
     });
+
+    // Targeted card: click the actor row to expand roll details.
+    // Save-request cards handle their own combined dropdown in _bindTargetedExpand.
+    if (card.classList.contains("arr-save-request")) return;
+    card.querySelectorAll(".arr-targeted-actor-row").forEach(row => {
+      row.addEventListener("click", (ev) => {
+        const block = row.closest(".arr-targeted-block");
+        if (!block) return;
+        const details = block.querySelector(':scope > .arr-targeted-roll-details');
+        if (!details) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const expanded = block.classList.toggle("arr-expanded");
+        const icon = row.querySelector(".arr-expand-icon");
+        if (icon) {
+          icon.classList.toggle("fa-chevron-up", expanded);
+          icon.classList.toggle("fa-chevron-down", !expanded);
+        }
+      });
+    });
   }
 
   // ----------------------------------------------------------
   // Update the aid bonus display on a single-check card
   // ----------------------------------------------------------
 
-  static _updateAidDisplay(card, flags, hideTotalFromPlayers = false) {
-    const aidTotal = RollRequestChat._calculateAidTotal(flags);
+  static _updateAidDisplay(card, flags, hideTotalFromPlayers = false, aidTotalOverride = null) {
+    const aidTotal = aidTotalOverride !== null ? aidTotalOverride : RollRequestChat._calculateAidTotal(flags);
     const bonusDisplay = card.querySelector(".arr-aid-bonus-display");
     const bonusValue = card.querySelector(".arr-aid-bonus-value");
     if (bonusDisplay) {
@@ -1166,7 +1657,7 @@ export class RollRequestChat {
   // Set inline result on a targeted actor's header row (live DOM path)
   // ----------------------------------------------------------
 
-  static _setInlineResult(block, result, dc, showResults, hideTotalFromPlayers = false) {
+  static async _setInlineResult(block, result, dc, showResults, hideTotalFromPlayers = false) {
     const inlineDiv = block.querySelector('.arr-inline-result');
     const rollBtn = block.querySelector('.arr-roll-btn[data-action="rollTargeted"]');
     if (!inlineDiv) return;
@@ -1180,9 +1671,41 @@ export class RollRequestChat {
     if (passed === true) passFailHtml = '<i class="fas fa-check arr-pass-icon"></i>';
     else if (passed === false) passFailHtml = '<i class="fas fa-times arr-fail-icon"></i>';
 
+    // Render roll details
+    let rollDetailsHtml = "";
+    if (result.rollData && showTotal) {
+      try {
+        const roll = Roll.fromData(result.rollData);
+        rollDetailsHtml = await roll.render();
+      } catch (err) {
+        console.warn(`${MODULE_ID} | Could not render targeted roll details:`, err);
+      }
+    }
+    let notesHtml = "";
+    if (result.notes?.length && showTotal) {
+      notesHtml = `<div class="arr-notes">${result.notes.map(n => `<span class="arr-note-tag">${n}</span>`).join("")}</div>`;
+    }
+    const hasDetails = !!(rollDetailsHtml || notesHtml);
+    const chevronHtml = hasDetails ? '<i class="fas fa-chevron-down arr-expand-icon"></i>' : "";
+
     inlineDiv.className = `arr-inline-result arr-result-total ${passClass}`;
-    inlineDiv.innerHTML = `${showTotal ? `<span class="arr-total-value">${result.total}</span>` : '<span class="arr-total-value">?</span>'}${passFailHtml}`;
+    inlineDiv.innerHTML = `${showTotal ? `<span class="arr-total-value">${result.total}</span>` : '<span class="arr-total-value">?</span>'}${passFailHtml}${chevronHtml}`;
     inlineDiv.removeAttribute("style");
+
+    // Inject roll details block after the actor row
+    if (hasDetails) {
+      let detailsDiv = block.querySelector(':scope > .arr-targeted-roll-details');
+      if (!detailsDiv) {
+        detailsDiv = document.createElement('div');
+        detailsDiv.className = 'arr-roll-details arr-targeted-roll-details';
+        const actorRow = block.querySelector('.arr-targeted-actor-row');
+        if (actorRow) actorRow.insertAdjacentElement('afterend', detailsDiv);
+        else block.appendChild(detailsDiv);
+      }
+      detailsDiv.innerHTML = `${rollDetailsHtml}${notesHtml}`;
+      const actorRow = block.querySelector('.arr-targeted-actor-row');
+      if (actorRow) actorRow.style.cursor = 'pointer';
+    }
 
     if (rollBtn) rollBtn.style.display = "none";
   }
@@ -1273,6 +1796,176 @@ export class RollRequestChat {
     if (pending) {
       pending.resolve(null);
       RollRequestChat._pendingResults.delete(messageId);
+    }
+  }
+
+  /**
+   * Register a streaming result callback for a chat message, invoked on every
+   * roll completed on that card (see the onResult option of createRequest).
+   * @param {string} messageId
+   * @param {(payload: object) => void} callback
+   */
+  static registerResultCallback(messageId, callback) {
+    RollRequestChat._resultCallbacks.set(messageId, callback);
+  }
+
+  /**
+   * Cancel a streaming result callback (e.g. when the message is deleted).
+   * When a `reason` is given, the callback receives one final terminal event
+   * before being unregistered, so consumers can tear down. The terminal payload
+   * is full-shaped but empty (result: null, results/aidResults: []) so handlers
+   * that iterate those collections without checking rollType don't blow up.
+   * @param {string} messageId
+   * @param {string|null} [reason]  Why the stream ended (e.g. "deleted"). Omit
+   *   for a silent unregister.
+   * @param {number|null} [dc]      The card's DC, carried through for parity with
+   *   normal result payloads.
+   */
+  static cancelResultCallback(messageId, reason = null, dc = null) {
+    const callback = RollRequestChat._resultCallbacks.get(messageId);
+    RollRequestChat._resultCallbacks.delete(messageId);
+    if (callback && reason) {
+      try {
+        callback({
+          messageId,
+          rollType: "cancelled",
+          reason,
+          result: null,
+          results: [],
+          aidResults: [],
+          dc,
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | onResult terminal callback threw:`, err);
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Select canvas tokens by save result (save requests only)
+  // ----------------------------------------------------------
+
+  static _selectSaveTokens(flags, which) {
+    if (!canvas?.tokens) return;
+    const actorResults = flags.actorResults || {};
+    const dc = flags.dc;
+    canvas.tokens.releaseAll();
+    for (const target of (flags.targetedActors || [])) {
+      const tokenDoc = fromUuidSync(target.tokenUUID);
+      if (!tokenDoc?.object) continue;
+      if (which === "all") {
+        tokenDoc.object.control({ releaseOthers: false });
+        continue;
+      }
+      const result = actorResults[target.id];
+      if (!result) continue;
+      const passed = dc != null ? result.total >= dc : null;
+      if (which === "passed" && passed === true) tokenDoc.object.control({ releaseOthers: false });
+      else if (which === "failed" && passed === false) tokenDoc.object.control({ releaseOthers: false });
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Bulk-roll saves for all unrolled targets (GM only, no dialog)
+  // ----------------------------------------------------------
+
+  static async _bulkRollSave(message, which) {
+    if (!game.user.isGM) return;
+    const flags = message.flags?.[MODULE_ID];
+    if (!flags?.isSaveRequest) return;
+
+    for (const target of (flags.targetedActors || [])) {
+      const currentFlags = message.flags?.[MODULE_ID];
+      if (!currentFlags) break;
+      if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
+
+      const tokenDoc = fromUuidSync(target.tokenUUID);
+      const actor = tokenDoc?.actor;
+      if (!actor) continue;
+
+      if (which === "npcs") {
+        if (actor.type === "character") continue;
+        const playerOwned = game.users.some(u => u.active && !u.isGM && actor.testUserPermission(u, "OWNER"));
+        if (playerOwned) continue;
+      }
+
+      let rollResult;
+      try {
+        rollResult = await RollRequestChat._performRoll(actor, flags.request, flags.dc, { skipDialog: true });
+      } catch (err) {
+        console.error(`${MODULE_ID} | Bulk save roll error for ${actor.name}:`, err);
+        continue;
+      }
+      if (!rollResult) continue;
+
+      const notes = await RollRequestChat._getEffectNotes(actor, flags.request);
+      const resultEntry = {
+        tokenId: tokenDoc.id,
+        actorId: actor.id,
+        resultKey: target.id,
+        actorName: actor.name,
+        actorImg: actor.img,
+        total: rollResult.total,
+        formula: rollResult.formula,
+        naturalRoll: rollResult.dice?.[0]?.results?.[0]?.result ?? null,
+        rollData: rollResult.toJSON(),
+        notes,
+      };
+
+      await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id });
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Bulk roll for targeted blind-roll cards (non-save)
+  // ----------------------------------------------------------
+
+  static async _bulkRollTargeted(message) {
+    if (!game.user.isGM) return;
+    const initialFlags = message.flags?.[MODULE_ID];
+    if (!initialFlags?.targetedActors?.length) return;
+
+    for (const target of initialFlags.targetedActors) {
+      const currentFlags = message.flags?.[MODULE_ID];
+      if (!currentFlags) break;
+      if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
+
+      // Resolve actor: use tokenUUID when present (handles unlinked tokens).
+      let actor, tokenId;
+      if (target.tokenUUID) {
+        const tokenDoc = fromUuidSync(target.tokenUUID);
+        actor = tokenDoc?.actor;
+        tokenId = tokenDoc?.id ?? null;
+      } else {
+        actor = game.actors.get(target.id);
+        tokenId = actor?.getActiveTokens?.()?.[0]?.id ?? null;
+      }
+      if (!actor) continue;
+
+      let rollResult;
+      try {
+        rollResult = await RollRequestChat._performRoll(actor, initialFlags.request, initialFlags.dc, { skipDialog: true });
+      } catch (err) {
+        console.error(`${MODULE_ID} | Bulk roll error for ${actor.name}:`, err);
+        continue;
+      }
+      if (!rollResult) continue;
+
+      const notes = await RollRequestChat._getEffectNotes(actor, initialFlags.request);
+      const resultEntry = {
+        tokenId,
+        actorId: actor.id,
+        resultKey: target.id,
+        actorName: actor.name,
+        actorImg: actor.img,
+        total: rollResult.total,
+        formula: rollResult.formula,
+        naturalRoll: rollResult.dice?.[0]?.results?.[0]?.result ?? null,
+        rollData: rollResult.toJSON(),
+        notes,
+      };
+
+      await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id });
     }
   }
 }

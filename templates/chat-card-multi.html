@@ -14,21 +14,53 @@
     <div class="arr-flavor">{{flavor}}</div>
     {{/if}}
 
+    {{! Optional aggregate summary slot (populated via a registered summary formatter) }}
+    {{{summaryHtml}}}
+
     <div class="arr-card-body">
-        <!-- The Roll button — anyone can click -->
+        <!-- Roll Check Section -->
         <div class="arr-roll-section arr-multi-roll">
+            {{#if includeAid}}
+            <div class="arr-section-header">Roll Check</div>
+            {{/if}}
             <div class="arr-roll-prompt flexrow">
-                <span class="arr-prompt-text">Click to roll {{requestName}}</span>
+                <span class="arr-prompt-text">
+                    Click to roll {{requestName}}
+                    {{#if includeAid}}
+                    <span class="arr-aid-bonus-display" style="display:none;">
+                        (Aid: <strong class="arr-aid-bonus-value">+0</strong>)
+                    </span>
+                    {{/if}}
+                </span>
                 <a class="arr-roll-btn" data-action="roll" title="Roll">
                     <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
                 </a>
             </div>
+
+            <!-- Roll results appear here -->
+            <ol class="arr-results-list">
+                {{! Results are injected dynamically }}
+            </ol>
         </div>
 
-        <!-- Roll results appear here -->
-        <ol class="arr-results-list">
-            {{! Results are injected dynamically }}
-        </ol>
+        {{#if includeAid}}
+        <hr class="arr-divider" />
+
+        <!-- Aid Another Section -->
+        <div class="arr-roll-section arr-aid-section">
+            <div class="arr-section-header">Aid Another</div>
+            <div class="arr-roll-prompt flexrow">
+                <span class="arr-prompt-text">Roll to assist (DC 10)</span>
+                <a class="arr-roll-btn" data-action="rollMultiAid" title="Aid Another">
+                    <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
+                </a>
+            </div>
+            <!-- Aid roll results appear here -->
+            <ol class="arr-results-list arr-aid-results">
+                {{! Aid results injected dynamically }}
+            </ol>
+        </div>
+        {{/if}}
     </div>
 
     <footer class="arr-card-footer gm-only">

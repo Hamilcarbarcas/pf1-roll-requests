@@ -102,6 +102,24 @@
   font-weight: bold;
 }
 
+/* Quick Action options execute on click — distinct, button-like styling */
+.arr-option-grid .request-option.arr-quick-option {
+  background: rgba(70, 136, 71, 0.18);
+  border-color: rgba(70, 136, 71, 0.5);
+  font-weight: bold;
+}
+
+.arr-option-grid .request-option.arr-quick-option:hover {
+  border-color: #468847;
+  box-shadow: 0 0 6px rgba(70, 136, 71, 0.5);
+  background: rgba(70, 136, 71, 0.3);
+}
+
+.arr-quick-icon {
+  font-size: 10px;
+  color: #468847;
+}
+
 /* ============================================================
    Chat Card Styles
    ============================================================ */
@@ -151,6 +169,19 @@
   color: #666;
   padding: 2px 4px;
   font-size: 11px;
+}
+
+/* ---- Aggregate summary slot (registered summary formatters) ---- */
+
+.arr-summary {
+  margin: 4px 0;
+  padding: 4px 8px;
+  border: 1px solid #c0a060;
+  border-radius: 3px;
+  background: rgba(192, 160, 96, 0.12);
+  font-size: 12px;
+  color: #4b4a44;
+  text-align: center;
 }
 
 /* ---- Section Headers ---- */
@@ -317,6 +348,11 @@
   color: #b94a48;
 }
 
+/* Consumed aid entries (spent by a prior primary roll in multi-check mode) */
+.arr-aid-consumed {
+  opacity: 0.4;
+}
+
 /* ---- Effect Notes / Footnotes ---- */
 
 .arr-notes {
@@ -471,6 +507,128 @@
   font-size: 11px;
 }
 
+/* Marker on player-owned NPC rows (right-clickable to exclude) */
+.arr-actor-npc-icon {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: #c0a060;
+  opacity: 0.8;
+}
+
+/* ============================================================
+   Excluded-Actor Manager (settings menu)
+   ============================================================ */
+
+.pf1-roll-requests.roll-request-blacklist .arr-blacklist {
+  padding: 4px 2px;
+}
+
+.arr-blacklist-hint {
+  font-size: 11px;
+  color: #ccc;
+  margin: 0 0 8px;
+}
+
+.arr-blacklist-empty {
+  font-style: italic;
+  color: #888;
+  font-size: 12px;
+  text-align: center;
+  padding: 12px 0;
+}
+
+.arr-blacklist-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.arr-blacklist-row {
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border: 1px solid #888;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.arr-blacklist-missing {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.arr-blacklist-img {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 2px;
+  border: 1px solid #888;
+  object-fit: contain;
+  background: #0001;
+}
+
+.arr-blacklist-name {
+  flex: 1;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arr-blacklist-remove {
+  flex: 0 0 auto;
+  width: auto;
+  font-size: 11px;
+  line-height: 20px;
+  padding: 0 8px;
+}
+
+/* ============================================================
+   Roll Options config (settings menu) + Quick Action actor popup
+   ============================================================ */
+
+.pf1-roll-requests.roll-options-config .arr-options-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px;
+}
+
+.arr-config-hint {
+  font-size: 11px;
+  color: #ccc;
+  margin: 2px 0 6px;
+}
+
+.arr-config-row {
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.arr-config-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.arr-config-name {
+  flex: 1;
+}
+
+.arr-quick-actor-select {
+  padding: 2px 0;
+}
+
+.arr-quick-select-prompt {
+  font-size: 12px;
+  margin: 0 0 6px;
+}
+
 /* ============================================================
    Chat Card — Targeted Mode
    ============================================================ */
@@ -526,4 +684,234 @@
 .arr-roll-btn-disabled {
   opacity: 0.3;
   pointer-events: none;
+}
+
+/* Expand roll details in targeted blocks */
+.arr-targeted-block.arr-expanded > .arr-targeted-roll-details {
+  display: block;
+}
+
+/* ============================================================
+   Per-target combined dropdown — defenses section
+   ============================================================ */
+
+/* Chevron affordance next to the target name */
+.arr-defenses-icon {
+  font-size: 9px;
+  color: #888;
+  margin-left: 4px;
+  align-self: center;
+  flex: 0 0 auto;
+}
+
+.arr-defenses-icon:hover {
+  color: #444;
+}
+
+/* Hidden until the block is expanded (mirrors .arr-targeted-roll-details) */
+.arr-targeted-defenses {
+  display: none;
+  font-size: 11px;
+  padding: 2px 0 2px 34px;
+  width: 100%;
+}
+
+.arr-targeted-block.arr-expanded > .arr-targeted-defenses {
+  display: block;
+}
+
+.arr-defenses-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.arr-def-header {
+  font-weight: bold;
+  font-size: 11px;
+  border-bottom: 1px solid #ccc;
+  margin-bottom: 1px;
+}
+
+/* A row of inline stats (AC / CMD / saves) — label and value on one line */
+.arr-def-row {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 12px;
+  row-gap: 1px;
+}
+
+.arr-def-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.arr-def-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #666;
+}
+
+.arr-def-val {
+  font-weight: bold;
+}
+
+/* Note / tag groups (AC/CMD/save notes, DR, ER, conditions) — inline label */
+.arr-def-notes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.arr-def-notes-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #666;
+  flex: 0 0 auto;
+}
+
+.arr-def-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.arr-def-tag {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid #c9c9c9;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+  line-height: 1.4;
+}
+
+/* ============================================================
+   Save-Request compact mode
+   ============================================================ */
+
+.arr-save-request .arr-card-header {
+  padding: 2px 0;
+}
+
+.arr-save-request .arr-card-header .arr-card-title {
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.arr-save-request .arr-card-header .arr-dc-display {
+  font-size: 12px;
+}
+
+.arr-save-request .arr-targeted-block {
+  padding: 1px 0;
+}
+
+.arr-save-request .arr-targeted-actor-row {
+  padding: 1px 0;
+  gap: 4px;
+}
+
+.arr-save-request .arr-actor-img {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
+.arr-save-request .arr-roll-btn {
+  height: 26px;
+  width: 26px;
+  flex: 0 0 26px;
+}
+
+.arr-save-request .arr-d20-icon {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+}
+
+.arr-save-request .arr-divider {
+  margin: 2px 0;
+}
+
+/* Clickable portraits in full rows */
+
+.arr-save-request .arr-targeted-block .arr-actor-img {
+  cursor: pointer;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
+.arr-save-request .arr-targeted-block .arr-actor-img:hover {
+  border-color: #ff6400;
+  opacity: 0.85;
+}
+
+/* Sub-observer token portrait grid */
+
+/* Bulk roll buttons (Roll All / Roll NPCs) at top of card body */
+
+.arr-save-bulk-btns {
+  gap: 4px;
+  padding-bottom: 3px;
+  margin-bottom: 3px;
+  border-bottom: 1px solid #ccc;
+}
+
+/* Select-tokens footer */
+
+.arr-save-select-footer {
+  border-top: 1px solid #ccc;
+  padding-top: 3px;
+  margin-top: 2px;
+  gap: 4px;
+}
+
+.arr-save-sel-btn {
+  flex: 1;
+  font-size: 10px;
+  padding: 1px 4px;
+  line-height: 16px;
+  border: 1px solid #999;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.arr-save-sel-btn:hover {
+  border-color: #ff6400;
+  background: rgba(255, 100, 0, 0.1);
+}
+
+/* Sub-observer portrait grid (non-GM view) */
+
+.arr-save-portrait-grid {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 4px 0 2px;
+  border-top: 1px solid #ddd;
+  margin-top: 2px;
+}
+
+.arr-save-portrait-only {
+  display: block !important;
+  width: 28px !important;
+  height: 28px !important;
+  max-width: 28px !important;
+  flex: 0 0 28px;
+  object-fit: contain;
+  border-radius: 2px;
+  border: 1px solid #aaa;
+  background: #0001;
+  opacity: 0.7;
+}
+
+.arr-save-portrait-only:hover {
+  opacity: 1;
+  border-color: #ff6400;
 }
