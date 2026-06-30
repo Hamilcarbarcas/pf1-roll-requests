@@ -675,8 +675,9 @@ export class RollRequestChat {
     // For Aid rolls: calculate the bonus contributed
     if (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid") {
       if (resultEntry.total >= 10) {
-        const overAmount = resultEntry.total - 10;
-        const extraBonus = Math.floor(overAmount / 5);
+        // Scaling +1 per 5 over the DC only applies when the uncap setting is enabled.
+        const uncapped = game.settings.get(MODULE_ID, "uncap-aid-another");
+        const extraBonus = uncapped ? Math.floor((resultEntry.total - 10) / 5) : 0;
         resultEntry.aidBonus = 2 + extraBonus;
         resultEntry.aidSuccess = true;
       } else {

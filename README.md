@@ -10,15 +10,12 @@ A Foundry VTT module for the PF1e system that lets the GM request rolls from pla
 - PF1e system v11.10+
 
 ## Features
-![Request window](assets/request-roll-window.png)
-
-![Chat Message](assets/request-roll-chat-message-blank.png)
-
-![Chat Message Filled](assets/request-roll-chat-message-completed.png)
 
 ### Roll Request Dialog
 
 A GM-only dialog accessed via the dice button in the token controls toolbar, or by calling `game.pf1RollRequests.requestRoll()` from a macro.
+
+![Request window](assets/request-roll-window.png)
 
 The dialog lets you select:
 
@@ -41,11 +38,13 @@ To hide a player-owned NPC you don't want prompted, **right-click its row** and 
 
 #### Quick Actions
 
-A **Quick Actions** category at the bottom of the options grid holds common, pre-configured rolls. Unlike the other categories, clicking a Quick Action **executes immediately** with its own baked-in settings — it ignores the left-hand panel and does not wait for the **Request Roll** button.
+An optional **Quick Actions** category at the bottom of the options grid holds common, pre-configured rolls. Unlike the other categories, clicking a Quick Action **executes immediately** with its own baked-in settings — it ignores the left-hand panel and does not wait for the **Request Roll** button. This category can be enabled or disabled in the mod settings.
 
 Available Quick Actions:
 
 - **Spot Checks** — prompts a Perception check from selected actors. Opens an actor picker (the same list as Prompt Actors, all selected by default), then posts a **public** request card whose roll totals are hidden from players (the GM sees them), with no DC and no Aid Another.
+
+Custom quick actions can be made via the mod API.
 
 #### Configuring Roll Options
 
@@ -56,13 +55,19 @@ Under **Settings → Module Settings → Configure Roll Options** you can show o
 
 ### Chat Cards
 
-**Single-check mode:** One player rolls the primary check. Other players can contribute Aid Another rolls (DC 10) that add +2 each to the primary roll's total. Results update in real time.
+![Chat Message](assets/request-roll-chat-message-blank.png) 
+
+![Chat Message Filled](assets/request-roll-chat-message-completed.png)
+
+**Single-check mode:** One player rolls the primary check. Other players can contribute Aid Another rolls (DC 10) that add +2 each to the primary roll's total, if enabled. Results update in real time.
 
 **Multi-check mode:** Any number of players can each roll independently. Each result is appended to the card as it comes in.
 
 The GM always sees the DC and pass/fail results. Players see them only if the GM enabled visibility for that request.
 
 ### Auto Save Requests
+
+![Chat Message Filled](assets/auto-save-request.png)
 
 When a PF1e attack action that includes a saving throw is posted to chat, the module automatically converts it into an embedded targeted roll-request card. The original spell/attack card header and footer (damage buttons, effect notes, etc.) are preserved around the roll-request section.
 
@@ -86,7 +91,7 @@ This feature is enabled by default and can be toggled in **Settings → Module S
 
 ### API
 
-Other modules can create roll requests programmatically:
+Other modules or scripts can create roll requests programmatically:
 
 ```js
 // Basic request

@@ -46,6 +46,16 @@ Hooks.once("init", () => {
     requiresReload: true,
   });
 
+  // Setting to allow Aid Another to grant scaling bonuses for high check results.
+  game.settings.register(MODULE_ID, "uncap-aid-another", {
+    name: "Uncap Aid Another",
+    hint: "Allows Aid Another checks to grant an additional +1 per for every 5 points the result exceeds 10.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
   // Persistent list of actor ids excluded from the Selection Check prompt list.
   game.settings.register(MODULE_ID, "npc-blacklist", {
     scope: "world",
