@@ -47,20 +47,20 @@ Hooks.once("init", () => {
     requiresReload: true,
   });
 
-  // Setting to allow Aid Another to grant scaling bonuses for high check results.
-  game.settings.register(MODULE_ID, "uncap-aid-another", {
-    name: "Uncap Aid Another",
-    hint: "Allows Aid Another checks to grant an additional +1 per for every 5 points the result exceeds 10.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: false,
-  });
-
   // Setting to fall back to a user's configured actor when no token is selected.
   game.settings.register(MODULE_ID, "use-configured-actor", {
     name: "Use Configured Actor When None Selected",
     hint: "When a user clicks a roll button without a token selected, roll for the actor configured in their User Configuration instead of warning them to select a token. Does not apply to per-target rolls on targeted cards.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
+
+  // Setting to allow Aid Another to grant scaling bonuses for high check results.
+  game.settings.register(MODULE_ID, "uncap-aid-another", {
+    name: "Uncap Aid Another",
+    hint: "Allows Aid Another checks to grant an additional +1 per for every 5 points the result exceeds 10.",
     scope: "world",
     config: true,
     type: Boolean,

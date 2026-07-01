@@ -74,7 +74,7 @@ Under **Settings → Module Settings → Configure Roll Options** you can show o
 
 The GM always sees the DC and pass/fail results. Players see them only if the GM enabled visibility for that request.
 
-**Rolling without a selected token:** Clicking a roll button normally rolls for your currently selected token, warning you if nothing is selected. When the GM enables **Settings → Module Settings → Use Configured Actor When None Selected**, clicking a roll button with no token selected instead rolls for the actor set in your User Configuration. This does not affect per-target roll buttons on targeted cards, which are always tied to a specific token.
+**Rolling without a selected token:** Clicking a roll button rolls for your currently selected token. By default, when no token is selected it instead rolls for the actor set in your User Configuration; the GM can disable this under **Settings → Module Settings → Use Configured Actor When None Selected**, in which case clicking with no token selected warns you to select one. This does not affect per-target roll buttons on targeted cards, which are always tied to a specific token.
 
 ### Auto Save Requests
 
