@@ -1,0 +1,162 @@
+/* ============================================================
+   Monster Lore window
+   ============================================================ */
+
+.pf1-monster-lore .pf1-monster-lore-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+}
+
+.pf1-monster-lore .form-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.pf1-monster-lore .form-group label {
+  flex: 0 0 120px;
+  font-weight: bold;
+}
+
+.pf1-monster-lore .form-group select {
+  flex: 1;
+}
+
+.pf1-monster-lore hr {
+  margin: 4px 0;
+}
+
+.pf1-monster-lore .ml-derived {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid #c0a060;
+  border-radius: 3px;
+  background: rgba(192, 160, 96, 0.12);
+}
+
+.pf1-monster-lore .ml-derived-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.pf1-monster-lore .ml-derived-row strong {
+  font-size: 14px;
+}
+
+.pf1-monster-lore .ml-actions {
+  text-align: center;
+  margin-top: 2px;
+}
+
+/* ---- Reference Monster Section ---- */
+
+.pf1-monster-lore .ml-monster-section {
+  margin-bottom: 2px;
+}
+
+.pf1-monster-lore .ml-monster-drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.pf1-monster-lore .ml-monster-drop-zone:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pf1-monster-lore .ml-monster-drop-zone.drag-hover,
+.pf1-monster-lore .ml-monster-display.drag-hover {
+  border-color: #c0a060;
+  color: #c0a060;
+  background: rgba(192, 160, 96, 0.1);
+}
+
+.pf1-monster-lore .ml-monster-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.pf1-monster-lore .ml-monster-portrait {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+
+.pf1-monster-lore .ml-monster-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pf1-monster-lore .ml-monster-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: #c0a060;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pf1-monster-lore .ml-monster-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pf1-monster-lore .ml-monster-stats strong {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.pf1-monster-lore .ml-monster-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pf1-monster-lore .ml-monster-actions button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.pf1-monster-lore .ml-monster-actions button:hover {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+}

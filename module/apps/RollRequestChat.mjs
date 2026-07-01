@@ -539,12 +539,21 @@ export class RollRequestChat {
       }
       if (!actor) { ui.notifications.warn("Target actor not found."); return; }
     } else {
-      // All other roll types use the currently controlled token
+      // All other roll types use the currently controlled token.
       const token = canvas.tokens.controlled[0];
-      if (!token) { ui.notifications.warn("Please select a token first."); return; }
-      actor = token.actor;
-      if (!actor) { ui.notifications.warn("Selected token has no actor."); return; }
-      tokenId = token.id;
+      if (token) {
+        actor = token.actor;
+        if (!actor) { ui.notifications.warn("Selected token has no actor."); return; }
+        tokenId = token.id;
+      } else if (game.settings.get(MODULE_ID, "use-configured-actor") && game.user.character) {
+        // Nothing selected: fall back to the actor set in this user's configuration.
+        actor = game.user.character;
+        // Prefer an active token on the current scene for dedup; else key on the actor id.
+        tokenId = actor.getActiveTokens?.()?.[0]?.id ?? actor.id;
+      } else {
+        ui.notifications.warn("Please select a token first.");
+        return;
+      }
     }
 
     // --- Permission check: targeted primary rolls are actor-specific ---

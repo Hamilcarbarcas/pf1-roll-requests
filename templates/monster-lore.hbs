@@ -1,0 +1,65 @@
+<div class="pf1-monster-lore-form">
+    <div class="ml-monster-section">
+        {{#if hasReference}}
+        <div class="ml-monster-display">
+            <img src="{{monsterImg}}" class="ml-monster-portrait" />
+            <div class="ml-monster-info">
+                <span class="ml-monster-name">{{monsterName}}</span>
+                <div class="ml-monster-stats">
+                    <span title="Challenge Rating"><strong>CR</strong> {{crLabel}}</span>
+                    <span title="Creature Type"><strong>Type</strong> {{typeLabel}}</span>
+                </div>
+            </div>
+            <div class="ml-monster-actions">
+                <button type="button" data-action="syncMonster" title="Re-sync CR & type from this actor"><i class="fas fa-sync-alt"></i></button>
+                <button type="button" data-action="clearMonster" title="Clear reference"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        {{else}}
+        <div class="ml-monster-drop-zone" data-action="grabToken">
+            <i class="fas fa-bullseye"></i>
+            <span>Select a token or drag an actor here (optional)</span>
+        </div>
+        {{/if}}
+    </div>
+
+    <div class="form-group">
+        <label for="ml-type">Monster Type</label>
+        <select id="ml-type" name="type">
+            {{#each types}}
+            <option value="{{this.key}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+            {{/each}}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="ml-cr">Challenge Rating</label>
+        <select id="ml-cr" name="cr">
+            {{#each crOptions}}
+            <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>CR {{this.label}}</option>
+            {{/each}}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="ml-rarity">Rarity</label>
+        <select id="ml-rarity" name="rarity">
+            {{#each rarities}}
+            <option value="{{this.key}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+            {{/each}}
+        </select>
+    </div>
+
+    <hr />
+
+    <div class="ml-derived">
+        <div class="ml-derived-row"><span>Knowledge Skill</span><strong>{{skillName}}</strong></div>
+        <div class="ml-derived-row"><span>Check DC</span><strong>{{dc}}</strong></div>
+    </div>
+
+    <div class="ml-actions">
+        <button type="button" data-action="requestChecks">
+            <i class="fas fa-dice-d20"></i> Request Knowledge Checks
+        </button>
+    </div>
+</div>

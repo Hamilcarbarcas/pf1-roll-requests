@@ -43,8 +43,17 @@ An optional **Quick Actions** category at the bottom of the options grid holds c
 Available Quick Actions:
 
 - **Spot Checks** — prompts a Perception check from selected actors. Opens an actor picker (the same list as Prompt Actors, all selected by default), then posts a **public** request card whose roll totals are hidden from players (the GM sees them), with no DC and no Aid Another.
+- **Monster Lore** — opens the Monster Lore window (see below) instead of posting a card directly, and closes the Roll Request dialog.
 
 Custom quick actions can be made via the mod API.
+
+#### Monster Lore
+
+A GM-only window (opened from the **Monster Lore** Quick Action) for running a Knowledge check to identify a monster. Pick a **monster type** (13 creature types), **CR**, and **rarity** (Common/Normal/Rare); a reference monster can be set by selecting a token or dragging an actor onto the drop zone (auto-filled on open from a single selected token), which auto-populates **CR** and **creature type** — sync re-pulls, clear removes it. Rarity stays manual (it's never on the actor).
+
+The type selects the relevant Knowledge skill — Arcana (constructs, dragons, magical beasts), Dungeoneering (aberrations, oozes), Local (humanoids), Nature (animals, fey, monstrous humanoids, plants, vermin), The Planes (outsiders), Religion (undead). **Request Knowledge Checks** then fires a **public multi-check** (Aid Another off); DC = rarity base (5/10/15) + CR (fractional CRs count as 1), hidden from players while results are public.
+
+The card shows a live **"Questions earned"** tally (via the card-summary system): each passing check earns 1 question, +1 per full 5 by which it beats the DC, tallied across the party as results come in.
 
 #### Configuring Roll Options
 
@@ -64,6 +73,8 @@ Under **Settings → Module Settings → Configure Roll Options** you can show o
 **Multi-check mode:** Any number of players can each roll independently. Each result is appended to the card as it comes in.
 
 The GM always sees the DC and pass/fail results. Players see them only if the GM enabled visibility for that request.
+
+**Rolling without a selected token:** Clicking a roll button normally rolls for your currently selected token, warning you if nothing is selected. When the GM enables **Settings → Module Settings → Use Configured Actor When None Selected**, clicking a roll button with no token selected instead rolls for the actor set in your User Configuration. This does not affect per-target roll buttons on targeted cards, which are always tied to a specific token.
 
 ### Auto Save Requests
 

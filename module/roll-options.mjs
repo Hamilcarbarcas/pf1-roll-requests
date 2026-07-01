@@ -5,6 +5,8 @@
 // Shared registries used by the Roll Request dialog (to render options) and
 // the Roll Options config window (to toggle visibility).
 
+import { MonsterLore } from "./apps/MonsterLore.mjs";
+
 /**
  * The selectable roll categories shown in the request-options grid, in display
  * order. Each can be hidden via the "excluded-categories" world setting.
@@ -50,6 +52,16 @@ export const QUICK_ACTIONS = [
       rollMode: "publicblind",
       includeAid: false,
     },
+  },
+  {
+    // Opens the Monster Lore window (callback-style built-in) rather than
+    // firing a declarative request; the window builds and sends its own
+    // Knowledge multi-check. Closes the Roll Request dialog on use.
+    key: "monster-lore",
+    label: "Monster Lore",
+    icon: "fa-dragon",
+    closeOnUse: true,
+    callback: () => MonsterLore.openWindow(),
   },
 ];
 

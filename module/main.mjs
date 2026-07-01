@@ -8,6 +8,7 @@ import { SaveAutoRequest } from "./apps/SaveAutoRequest.mjs";
 import { BlacklistConfig } from "./apps/BlacklistConfig.mjs";
 import { RollOptionsConfig } from "./apps/RollOptionsConfig.mjs";
 import { registerQuickAction, unregisterQuickAction, getQuickActions } from "./roll-options.mjs";
+import { MONSTER_LORE_SUMMARY_KEY, monsterLoreSummary } from "./apps/MonsterLore.mjs";
 import { SocketHandler } from "./SocketHandler.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
@@ -50,6 +51,16 @@ Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "uncap-aid-another", {
     name: "Uncap Aid Another",
     hint: "Allows Aid Another checks to grant an additional +1 per for every 5 points the result exceeds 10.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
+  // Setting to fall back to a user's configured actor when no token is selected.
+  game.settings.register(MODULE_ID, "use-configured-actor", {
+    name: "Use Configured Actor When None Selected",
+    hint: "When a user clicks a roll button without a token selected, roll for the actor configured in their User Configuration instead of warning them to select a token. Does not apply to per-target rolls on targeted cards.",
     scope: "world",
     config: true,
     type: Boolean,
@@ -104,6 +115,9 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
   SocketHandler.register();
+
+  // Register the Monster Lore card summary (live "Questions earned" tally).
+  RollRequestChat.registerSummary(MONSTER_LORE_SUMMARY_KEY, monsterLoreSummary);
 });
 
 // ---- Render interactive elements on chat cards ----

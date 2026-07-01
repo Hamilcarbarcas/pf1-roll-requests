@@ -28,7 +28,8 @@
     "module/main.mjs"
   ],
   "styles": [
-    "styles/roll-requests.css"
+    "styles/roll-requests.css",
+    "styles/monster-lore.css"
   ],
   "socket": true
 }
