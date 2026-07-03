@@ -1,8 +1,8 @@
 {
   "id": "pf1-roll-requests",
-  "title": "PF1e Roll Requests",
+  "title": "PF1 Roll Requests",
   "description": "A roll request system for PF1e that supports single-check (with Aid Another) and multi-check modes.",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "authors": [
     {
       "name": "Patrick"
@@ -25,11 +25,11 @@
     ]
   },
   "esmodules": [
-    "module/main.mjs"
+    "src/module/main.mjs"
   ],
   "styles": [
-    "styles/roll-requests.css",
-    "styles/monster-lore.css"
+    "src/styles/roll-requests.css",
+    "src/styles/monster-lore.css"
   ],
   "socket": true
 }

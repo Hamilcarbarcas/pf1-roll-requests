@@ -64,7 +64,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   };
 
   static PARTS = {
-    body: { template: `modules/${MODULE_ID}/templates/roll-request-dialog.html` },
+    body: { template: `modules/${MODULE_ID}/src/templates/roll-request-dialog.html` },
     footer: { template: "templates/generic/form-footer.hbs" },
   };
 
@@ -289,7 +289,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     }
 
     const content = await renderTemplate(
-      `modules/${MODULE_ID}/templates/quick-actor-select.html`,
+      `modules/${MODULE_ID}/src/templates/quick-actor-select.html`,
       { label, actors }
     );
 

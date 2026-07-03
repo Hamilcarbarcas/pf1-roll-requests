@@ -29,7 +29,7 @@ export class RollOptionsConfig extends HandlebarsApplicationMixin(ApplicationV2)
   };
 
   static PARTS = {
-    body: { template: `modules/${MODULE_ID}/templates/roll-options-config.html` },
+    body: { template: `modules/${MODULE_ID}/src/templates/roll-options-config.html` },
     footer: { template: "templates/generic/form-footer.hbs" },
   };
 

@@ -84,11 +84,11 @@ export class RollRequestChat {
   static async createChatCard(requestData) {
     let template;
     if (requestData.mode === "single") {
-      template = `modules/${MODULE_ID}/templates/chat-card-single.html`;
+      template = `modules/${MODULE_ID}/src/templates/chat-card-single.html`;
     } else if (requestData.mode === "targeted") {
-      template = `modules/${MODULE_ID}/templates/chat-card-targeted.html`;
+      template = `modules/${MODULE_ID}/src/templates/chat-card-targeted.html`;
     } else {
-      template = `modules/${MODULE_ID}/templates/chat-card-multi.html`;
+      template = `modules/${MODULE_ID}/src/templates/chat-card-multi.html`;
     }
 
     // Build the display name for the request
@@ -1085,11 +1085,11 @@ export class RollRequestChat {
   static async _rebuildCardContent(flags) {
     let template;
     if (flags.mode === "single") {
-      template = `modules/${MODULE_ID}/templates/chat-card-single.html`;
+      template = `modules/${MODULE_ID}/src/templates/chat-card-single.html`;
     } else if (flags.mode === "targeted") {
-      template = `modules/${MODULE_ID}/templates/chat-card-targeted.html`;
+      template = `modules/${MODULE_ID}/src/templates/chat-card-targeted.html`;
     } else {
-      template = `modules/${MODULE_ID}/templates/chat-card-multi.html`;
+      template = `modules/${MODULE_ID}/src/templates/chat-card-multi.html`;
     }
 
     const requestName = flags.request.name;

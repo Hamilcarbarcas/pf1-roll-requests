@@ -145,7 +145,7 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   static PARTS = {
-    body: { template: `modules/${MODULE_ID}/templates/monster-lore.hbs` },
+    body: { template: `modules/${MODULE_ID}/src/templates/monster-lore.hbs` },
   };
 
   // ---- Helpers ----

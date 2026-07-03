@@ -28,7 +28,7 @@ export class BlacklistConfig extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   static PARTS = {
-    body: { template: `modules/${MODULE_ID}/templates/blacklist-config.html` },
+    body: { template: `modules/${MODULE_ID}/src/templates/blacklist-config.html` },
   };
 
   async _prepareContext(options) {
