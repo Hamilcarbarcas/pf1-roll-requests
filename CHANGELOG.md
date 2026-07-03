@@ -9,10 +9,37 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-30
+
 ### Added
+- **Targeted check mode.** Request a check for specific targets, with results matched per-target. Blind rolls are properly obfuscated so players only see what they should, and save-request embeds include defensive info for the relevant target.
+- **Quick Actions.** New Quick Actions section in settings for one-click common requests, a built-in Spot Checks action, and API support for adding your own buttons.
+- **NPC support.** Player-owned NPCs now appear in the actor selection list, with a new NPC blacklist to hide specific NPCs.
+- **Saving throws.** Chat messages that include a saving throw can carry a roll request directly, and saving-throw requests can be attached to existing chat messages.
+- **Aid Another.** Multi-check requests now support Aid Another.
+- **Roll options & summaries.** New Roll Options configuration for finer control over what is displayed in the request window, plus a summary registry across all roll modes (also exposed through the API).
+- Expanded public API: callbacks for multi-request flows, quick actions, summary registry, and roll options.
+
 ### Changed
+- Reworked ownership detection for non-save requests.
+- Project renamed to PF1e; module title updated and manifest link added.
+- Aid Another rules updated to match Pathfinder core, with an optional house-rule setting granting +1 for every 5 points a check exceeds 10.
+- Updated README.
+
 ### Fixed
+- Automatic cleanup when a request card is deleted, so no orphaned multi-request state is left behind.
 
----
+## [1.0.2] - 2026-03-28
 
-_Releases prior to this changelog are documented on the [GitHub Releases page](https://github.com/Hamilcarbarcas/pf1-roll-requests/releases)._
+### Changed
+- README updates.
+
+## [1.0.1] - 2026-03-28
+
+### Added
+- Toggle option in module settings for the sidebar button.
+
+## [1.0.0] - 2026-03-28
+
+### Added
+- Initial release.
