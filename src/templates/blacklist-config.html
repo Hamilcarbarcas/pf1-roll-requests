@@ -1,8 +1,7 @@
 <div class="arr-blacklist">
     {{#if actors.length}}
     <p class="arr-blacklist-hint">
-        These player-owned NPCs are hidden from the Selection Check prompt list. Remove an entry to make it
-        eligible again (it will reappear when it has a linked token on the viewed scene).
+        {{localize "RR.Blacklist.Hint"}}
     </p>
     <ul class="arr-blacklist-list">
         {{#each actors}}
@@ -10,12 +9,12 @@
             <img src="{{this.img}}" class="arr-blacklist-img" alt="{{this.name}}" />
             <span class="arr-blacklist-name">{{this.name}}</span>
             <button type="button" class="arr-blacklist-remove" data-action="removeActor" data-actor-id="{{this.id}}">
-                <i class="fa-solid fa-trash"></i> Remove
+                <i class="fa-solid fa-trash"></i> {{localize "RR.Blacklist.Remove"}}
             </button>
         </li>
         {{/each}}
     </ul>
     {{else}}
-    <p class="arr-blacklist-empty">No actors are excluded.</p>
+    <p class="arr-blacklist-empty">{{localize "RR.Blacklist.Empty"}}</p>
     {{/if}}
 </div>

@@ -74,7 +74,7 @@ export class SaveAutoRequest {
     const { headerHtml, footerHtml } = SaveAutoRequest._extractPf1Content(html);
 
     const rawLabel = pf1?.config?.savingThrows?.[saveType] ?? saveType;
-    const saveName = game.i18n.localize(rawLabel) + " Save";
+    const saveName = game.i18n.format("RR.SaveName", { name: game.i18n.localize(rawLabel) });
 
     const flagData = {
       mode: "targeted",

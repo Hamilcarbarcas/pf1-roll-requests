@@ -18,7 +18,7 @@ export class RollOptionsConfig extends HandlebarsApplicationMixin(ApplicationV2)
     tag: "form",
     classes: ["pf1-roll-requests", "roll-options-config"],
     window: {
-      title: "Roll Categories & Quick Actions",
+      title: "RR.Window.RollOptions",
       icon: "fa-solid fa-sliders",
       resizable: true,
     },
@@ -37,7 +37,7 @@ export class RollOptionsConfig extends HandlebarsApplicationMixin(ApplicationV2)
     context = await super._preparePartContext(partId, context, options);
     if (partId === "footer") {
       context.buttons = [
-        { type: "button", icon: "fas fa-save", label: "Save Changes", action: "save" },
+        { type: "button", icon: "fas fa-save", label: "RR.OptionsConfig.SaveChanges", action: "save" },
       ];
       return context;
     }
@@ -47,12 +47,12 @@ export class RollOptionsConfig extends HandlebarsApplicationMixin(ApplicationV2)
 
     context.categories = ROLL_CATEGORIES.map(c => ({
       id: c.id,
-      label: c.text,
+      label: game.i18n.localize(c.text),
       enabled: !excludedCats.has(c.id),
     }));
     context.quickActions = getQuickActions().map(q => ({
       key: q.key,
-      label: q.label,
+      label: game.i18n.localize(q.label),
       enabled: !excludedQuick.has(q.key),
     }));
     return context;
@@ -65,7 +65,7 @@ export class RollOptionsConfig extends HandlebarsApplicationMixin(ApplicationV2)
     const excludedQuickActions = [...form.querySelectorAll('input[name="quick"]:not(:checked)')].map(cb => cb.value);
     await game.settings.set(MODULE_ID, "excluded-categories", excludedCategories);
     await game.settings.set(MODULE_ID, "excluded-quick-actions", excludedQuickActions);
-    ui.notifications.info("Roll options updated.");
+    ui.notifications.info(game.i18n.localize("RR.Notif.RollOptionsUpdated"));
     this.close();
   }
 }

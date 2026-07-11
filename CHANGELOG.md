@@ -9,6 +9,9 @@
 
 ## [Unreleased]
 
+### Changed
+- All user-facing text (settings, menus, dialogs, chat cards, Monster Lore window, defenses panel, notifications) is now localizable via `game.i18n` (English `lang/en.json` included).
+
 ## [1.1.0] - 2026-06-30
 
 ### Added

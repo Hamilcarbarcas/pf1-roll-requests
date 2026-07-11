@@ -1,15 +1,15 @@
 <div class="arr-quick-actor-select">
-    <p class="arr-quick-select-prompt">Select actors to prompt for <strong>{{label}}</strong>:</p>
+    <p class="arr-quick-select-prompt">{{{localize "RR.QuickSelect.Prompt" label=label}}}</p>
     <div class="arr-actor-check-list">
         {{#each actors}}
         <label class="arr-actor-check-label flexrow">
             <input type="checkbox" class="arr-actor-checkbox" data-actor-id="{{this.id}}" checked />
             <img src="{{this.img}}" class="arr-actor-check-img" alt="{{this.name}}" />
             <span class="arr-actor-check-name">{{this.name}}</span>
-            {{#if (eq this.source "npc")}}<i class="fa-solid fa-paw arr-actor-npc-icon" title="Player-owned NPC on this scene"></i>{{/if}}
+            {{#if (eq this.source "npc")}}<i class="fa-solid fa-paw arr-actor-npc-icon" title="{{localize "RR.Common.NpcOnScene"}}"></i>{{/if}}
         </label>
         {{else}}
-        <span class="arr-no-actors-msg">No eligible actors.</span>
+        <span class="arr-no-actors-msg">{{localize "RR.Common.NoEligibleActors"}}</span>
         {{/each}}
     </div>
 </div>

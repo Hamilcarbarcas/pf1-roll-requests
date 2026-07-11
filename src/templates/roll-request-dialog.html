@@ -4,69 +4,69 @@
         <div class="arr-settings flexcol">
             <!-- Check Mode -->
             <fieldset class="arr-fieldset">
-                <legend>Check Mode</legend>
+                <legend>{{localize "RR.Dialog.CheckModeLegend"}}</legend>
                 <label class="arr-radio-label">
                     <input type="radio" name="checkMode" value="single" {{#if (eq checkMode "single")}}checked{{/if}} />
-                    Single Check
+                    {{localize "RR.Dialog.SingleCheck"}}
                 </label>
                 <label class="arr-radio-label">
                     <input type="radio" name="checkMode" value="selection" {{#if (eq checkMode "selection")}}checked{{/if}} />
-                    Selection Check
+                    {{localize "RR.Dialog.SelectionCheck"}}
                 </label>
                 <label class="arr-radio-label">
                     <input type="radio" name="checkMode" value="multi" {{#if (eq checkMode "multi")}}checked{{/if}} />
-                    Multi-Check
+                    {{localize "RR.Dialog.MultiCheck"}}
                 </label>
             </fieldset>
 
             <!-- DC -->
             <div class="form-group">
-                <label for="arr-dc">DC</label>
+                <label for="arr-dc">{{localize "RR.Dialog.DC"}}</label>
                 <div class="flexrow" style="gap: 8px; align-items: center;">
                     <input type="number" step="any" id="arr-dc" value="{{dc}}" style="flex: 0 0 60px; text-align: right;" />
-                    <label style="flex: 0 0 auto; margin: 0;">Show</label>
+                    <label style="flex: 0 0 auto; margin: 0;">{{localize "RR.Dialog.Show"}}</label>
                     <input type="checkbox" id="arr-show-dc" {{checked showDC}} style="flex: 0 0 auto;" />
                 </div>
             </div>
 
             <!-- Roll Mode -->
             <div class="form-group">
-                <label for="arr-rollmode">Roll Mode</label>
+                <label for="arr-rollmode">{{localize "RR.Dialog.RollMode"}}</label>
                 <select id="arr-rollmode">
-                    <option value="roll|hidden" {{#if (eq rollModeOption "roll|hidden")}}selected{{/if}}>Public Roll, Results Hidden</option>
-                    <option value="roll|show" {{#if (eq rollModeOption "roll|show")}}selected{{/if}}>Public Roll</option>
-                    <option value="gmroll|show" {{#if (eq rollModeOption "gmroll|show")}}selected{{/if}}>Private GM Roll</option>
-                    <option value="publicblind|hidden" {{#if (eq rollModeOption "publicblind|hidden")}}selected{{/if}}>Blind Roll, Results Hidden</option>
-                    <option value="publicblind|show" {{#if (eq rollModeOption "publicblind|show")}}selected{{/if}}>Blind Roll</option>
+                    <option value="roll|hidden" {{#if (eq rollModeOption "roll|hidden")}}selected{{/if}}>{{localize "RR.Mode.PublicRollHidden"}}</option>
+                    <option value="roll|show" {{#if (eq rollModeOption "roll|show")}}selected{{/if}}>{{localize "RR.Mode.PublicRoll"}}</option>
+                    <option value="gmroll|show" {{#if (eq rollModeOption "gmroll|show")}}selected{{/if}}>{{localize "RR.Mode.PrivateGMRoll"}}</option>
+                    <option value="publicblind|hidden" {{#if (eq rollModeOption "publicblind|hidden")}}selected{{/if}}>{{localize "RR.Mode.BlindRollHidden"}}</option>
+                    <option value="publicblind|show" {{#if (eq rollModeOption "publicblind|show")}}selected{{/if}}>{{localize "RR.Mode.BlindRoll"}}</option>
                 </select>
             </div>
 
             <!-- Flavor -->
             <div class="form-group">
-                <label for="arr-flavor">Flavor Text</label>
-                <input type="text" id="arr-flavor" value="{{flavor}}" placeholder="Optional flavor text..." />
+                <label for="arr-flavor">{{localize "RR.Dialog.FlavorText"}}</label>
+                <input type="text" id="arr-flavor" value="{{flavor}}" placeholder="{{localize "RR.Dialog.FlavorPlaceholder"}}" />
             </div>
 
             <!-- Aid Another -->
             <div class="form-group">
-                <label style="flex: 0 0 auto;">Aid Another</label>
+                <label style="flex: 0 0 auto;">{{localize "RR.Dialog.AidAnother"}}</label>
                 <input type="checkbox" id="arr-include-aid" {{checked includeAid}} style="flex: 0 0 auto;" />
             </div>
 
             <!-- Prompt Actors (selection mode only) -->
             <div class="arr-actor-selection" {{#unless (eq checkMode "selection")}}style="display:none;"{{/unless}}>
-                <label class="arr-actor-selection-label">Prompt Actors</label>
+                <label class="arr-actor-selection-label">{{localize "RR.Dialog.PromptActors"}}</label>
                 <div class="arr-actor-check-list">
                     {{#each promptActors}}
                     <label class="arr-actor-check-label flexrow" data-source="{{this.source}}" data-actor-id="{{this.id}}"
-                           {{#if (eq this.source "npc")}}title="Right-click to exclude from list"{{/if}}>
+                           {{#if (eq this.source "npc")}}title="{{localize "RR.Dialog.RightClickExclude"}}"{{/if}}>
                         <input type="checkbox" class="arr-actor-checkbox" data-actor-id="{{this.id}}" {{checked this.checked}} />
                         <img src="{{this.img}}" class="arr-actor-check-img" alt="{{this.name}}" />
                         <span class="arr-actor-check-name">{{this.name}}</span>
-                        {{#if (eq this.source "npc")}}<i class="fa-solid fa-paw arr-actor-npc-icon" title="Player-owned NPC on this scene"></i>{{/if}}
+                        {{#if (eq this.source "npc")}}<i class="fa-solid fa-paw arr-actor-npc-icon" title="{{localize "RR.Common.NpcOnScene"}}"></i>{{/if}}
                     </label>
                     {{else}}
-                    <span class="arr-no-actors-msg">No eligible actors.</span>
+                    <span class="arr-no-actors-msg">{{localize "RR.Common.NoEligibleActors"}}</span>
                     {{/each}}
                 </div>
             </div>

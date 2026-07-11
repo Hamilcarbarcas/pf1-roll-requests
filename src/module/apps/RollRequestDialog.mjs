@@ -52,7 +52,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     tag: "form",
     classes: ["pf1-roll-requests", "roll-request-dialog"],
     window: {
-      title: "Request Roll",
+      title: "RR.Window.Dialog",
       resizable: false,
     },
     actions: {
@@ -80,7 +80,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
           {
             type: "button",
             icon: "fas fa-dice-d20",
-            label: "Request Roll",
+            label: "RR.Common.RequestRoll",
             action: "requestRoll",
           },
         ];
@@ -109,19 +109,19 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     };
 
     const allGroups = [
-      { id: "ability", text: "Ability Check", groups: abilities },
-      { id: "save", text: "Saving Throw", groups: saves },
-      { id: "skill", text: "Skill Check", groups: skills },
-      { id: "dice", text: "Dice", groups: dice },
+      { id: "ability", text: game.i18n.localize("RR.Category.Ability"), groups: abilities },
+      { id: "save", text: game.i18n.localize("RR.Category.Save"), groups: saves },
+      { id: "skill", text: game.i18n.localize("RR.Category.Skill"), groups: skills },
+      { id: "dice", text: game.i18n.localize("RR.Category.Dice"), groups: dice },
     ];
 
     // Quick Actions — execute immediately (built-in) or invoke a mod callback.
     const excludedQuick = new Set(game.settings.get(MODULE_ID, "excluded-quick-actions") ?? []);
     const quickItems = getQuickActions()
       .filter(qa => !excludedQuick.has(qa.key))
-      .map(qa => ({ key: qa.key, label: qa.label, icon: qa.icon ?? "fa-bolt" }));
+      .map(qa => ({ key: qa.key, label: game.i18n.localize(qa.label), icon: qa.icon ?? "fa-bolt" }));
     if (quickItems.length > 0) {
-      allGroups.push({ id: "quick", text: "Quick Actions", isQuickAction: true, items: quickItems });
+      allGroups.push({ id: "quick", text: game.i18n.localize("RR.Category.Quick"), isQuickAction: true, items: quickItems });
     }
 
     // Hide any categories disabled in the Roll Options config.
@@ -203,7 +203,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     // Drop it from the current selection if it was checked.
     this.targetedActors = this.targetedActors.filter(a => a.id !== actorId);
     const actor = game.actors.get(actorId);
-    ui.notifications.info(`${actor?.name ?? "Actor"} excluded from the roll-request prompt list.`);
+    ui.notifications.info(game.i18n.format("RR.Notif.ActorExcluded", { name: actor?.name ?? game.i18n.localize("RR.ActorPlaceholder") }));
     this.render();
   }
 
@@ -211,7 +211,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   _getActorContextOptions() {
     return [
       {
-        name: "Exclude from List",
+        name: game.i18n.localize("RR.Dialog.ExcludeFromList"),
         icon: '<i class="fa-solid fa-eye-slash"></i>',
         callback: (target) => {
           const el = target instanceof HTMLElement ? target : target[0];
@@ -230,10 +230,10 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
     let selectedActors = null;
     if (action.promptActors) {
-      const ids = await this._promptActorSelection(action.label);
+      const ids = await this._promptActorSelection(game.i18n.localize(action.label));
       if (ids === null) return; // cancelled / no eligible actors
       if (ids.length === 0) {
-        ui.notifications.warn("Please select at least one actor to prompt.");
+        ui.notifications.warn(game.i18n.localize("RR.Notif.SelectAtLeastOne"));
         return;
       }
       selectedActors = ids
@@ -252,7 +252,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
         await action.callback({ app: this, actors: selectedActors, event });
       } catch (err) {
         console.error(`pf1-roll-requests | Quick action '${action.key}' threw:`, err);
-        ui.notifications.error(`Quick action "${action.label}" failed; see console.`);
+        ui.notifications.error(game.i18n.format("RR.Notif.QuickActionFailed", { label: game.i18n.localize(action.label) }));
       }
       if (action.closeOnUse) this.close();
       return;
@@ -284,7 +284,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   async _promptActorSelection(label) {
     const actors = this._getPromptActors(new Set());
     if (actors.length === 0) {
-      ui.notifications.warn("No eligible actors to prompt.");
+      ui.notifications.warn(game.i18n.localize("RR.Notif.NoEligibleActors"));
       return null;
     }
 
@@ -294,14 +294,14 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     );
 
     const result = await foundry.applications.api.DialogV2.wait({
-      window: { title: `${label} — Select Actors`, icon: "fa-solid fa-eye" },
+      window: { title: game.i18n.format("RR.Dialog.SelectActorsTitle", { label }), icon: "fa-solid fa-eye" },
       classes: ["pf1-roll-requests"],
       position: { width: 320 },
       content,
       buttons: [
         {
           action: "prompt",
-          label: "Prompt",
+          label: game.i18n.localize("RR.Common.Prompt"),
           icon: "fas fa-dice-d20",
           default: true,
           callback: (_event, _button, dialog) => {
@@ -309,7 +309,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
             return [...root.querySelectorAll(".arr-actor-checkbox:checked")].map(cb => cb.dataset.actorId);
           },
         },
-        { action: "cancel", label: "Cancel", icon: "fas fa-times" },
+        { action: "cancel", label: game.i18n.localize("RR.Common.Cancel"), icon: "fas fa-times" },
       ],
       rejectClose: false,
     });
@@ -335,7 +335,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       rollMode: cfg.rollMode,
       flavor: "",
       includeAid: cfg.includeAid,
-      request: action.request,
+      request: { ...action.request, name: game.i18n.localize(action.request.name) },
       rolledActors: {},
       aidResults: {},
       aidTotal: 0,
@@ -362,13 +362,13 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
     // Custom skills from astora-mod (added via preCreateActor hook)
     const customSkills = {
-      ahy: "Autohypnosis",
-      csh: "Control Shape",
-      psi: "Psicraft",
-      kps: "Knowledge (Psionics)",
+      ahy: "RR.CustomSkill.ahy",
+      csh: "RR.CustomSkill.csh",
+      psi: "RR.CustomSkill.psi",
+      kps: "RR.CustomSkill.kps",
     };
-    for (const [key, name] of Object.entries(customSkills)) {
-      if (!skills[key]) skills[key] = name;
+    for (const [key, nameKey] of Object.entries(customSkills)) {
+      if (!skills[key]) skills[key] = game.i18n.localize(nameKey);
     }
 
     // Sort alphabetically by display name
@@ -482,7 +482,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
   static #onRequestRoll(_event, _target) {
     if (!this.selectedRequest) {
-      ui.notifications.warn("Please select a check type before requesting a roll.");
+      ui.notifications.warn(game.i18n.localize("RR.Notif.SelectCheckType"));
       return;
     }
 
@@ -491,7 +491,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
     // Selection Check requires at least one actor to be chosen
     if (this.checkMode === "selection" && this.targetedActors.length === 0) {
-      ui.notifications.warn("Please select at least one actor to prompt.");
+      ui.notifications.warn(game.i18n.localize("RR.Notif.SelectAtLeastOne"));
       return;
     }
 

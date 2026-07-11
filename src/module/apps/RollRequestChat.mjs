@@ -340,8 +340,8 @@ export class RollRequestChat {
           const bulkBtns = document.createElement("div");
           bulkBtns.className = "arr-save-bulk-btns flexrow";
           bulkBtns.innerHTML =
-            `<button type="button" class="arr-save-sel-btn" data-bulk="all">Roll All</button>` +
-            `<button type="button" class="arr-save-sel-btn" data-bulk="npcs">Roll NPCs</button>`;
+            `<button type="button" class="arr-save-sel-btn" data-bulk="all">${game.i18n.localize("RR.Bulk.RollAll")}</button>` +
+            `<button type="button" class="arr-save-sel-btn" data-bulk="npcs">${game.i18n.localize("RR.Bulk.RollNPCs")}</button>`;
           const body = card.querySelector(".arr-card-body");
           if (body) body.insertBefore(bulkBtns, body.firstChild);
           else card.prepend(bulkBtns);
@@ -356,9 +356,9 @@ export class RollRequestChat {
           const selectFooter = document.createElement("div");
           selectFooter.className = "arr-save-select-footer flexrow";
           selectFooter.innerHTML =
-            `<button type="button" class="arr-save-sel-btn" data-select="all">Select All</button>` +
-            `<button type="button" class="arr-save-sel-btn" data-select="passed">Select Passed</button>` +
-            `<button type="button" class="arr-save-sel-btn" data-select="failed">Select Failed</button>`;
+            `<button type="button" class="arr-save-sel-btn" data-select="all">${game.i18n.localize("RR.Bulk.SelectAll")}</button>` +
+            `<button type="button" class="arr-save-sel-btn" data-select="passed">${game.i18n.localize("RR.Bulk.SelectPassed")}</button>` +
+            `<button type="button" class="arr-save-sel-btn" data-select="failed">${game.i18n.localize("RR.Bulk.SelectFailed")}</button>`;
           card.appendChild(selectFooter);
           selectFooter.querySelectorAll("[data-select]").forEach(btn => {
             btn.addEventListener("click", (e) => {
@@ -379,7 +379,7 @@ export class RollRequestChat {
     if (game.user.isGM && flags.rollMode === "blindroll" && !flags.isSaveRequest) {
       const bulkBtns = document.createElement("div");
       bulkBtns.className = "arr-save-bulk-btns flexrow";
-      bulkBtns.innerHTML = `<button type="button" class="arr-save-sel-btn">Roll All</button>`;
+      bulkBtns.innerHTML = `<button type="button" class="arr-save-sel-btn">${game.i18n.localize("RR.Bulk.RollAll")}</button>`;
       const body = card.querySelector(".arr-card-body");
       if (body) body.insertBefore(bulkBtns, body.firstChild);
       else card.prepend(bulkBtns);
@@ -421,7 +421,7 @@ export class RollRequestChat {
         // Build defenses once, lazily, from the live actor on this client.
         if (!panel.dataset.loaded) {
           const actor = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID)?.actor : null;
-          if (!actor) return void ui.notifications.warn("Could not load target defenses.");
+          if (!actor) return void ui.notifications.warn(game.i18n.localize("RR.Notif.LoadDefensesFailed"));
           try {
             panel.innerHTML = await RollRequestChat._buildDefensesPanel(actor);
             panel.dataset.loaded = "1";
@@ -484,23 +484,23 @@ export class RollRequestChat {
     };
 
     let html = `<div class="arr-defenses-content">`;
-    html += `<div class="arr-def-header">Defenses</div>`;
+    html += `<div class="arr-def-header">${game.i18n.localize("RR.Def.Defenses")}</div>`;
 
-    html += `<div class="arr-def-row">${stat("AC", ac.normal?.total ?? 0)}${stat("Touch", ac.touch?.total ?? 0)}${stat("FF", ac.flatFooted?.total ?? 0)}</div>`;
-    html += noteGroup("AC Notes", acNotes);
+    html += `<div class="arr-def-row">${stat(game.i18n.localize("RR.Def.AC"), ac.normal?.total ?? 0)}${stat(game.i18n.localize("RR.Def.Touch"), ac.touch?.total ?? 0)}${stat(game.i18n.localize("RR.Def.FF"), ac.flatFooted?.total ?? 0)}</div>`;
+    html += noteGroup(game.i18n.localize("RR.Def.ACNotes"), acNotes);
 
-    let cmdRow = `${stat("CMD", cmd.total ?? 0)}${stat("FF CMD", cmd.flatFootedTotal ?? 0)}`;
-    if (sr) cmdRow += stat("SR", sr);
+    let cmdRow = `${stat(game.i18n.localize("RR.Def.CMD"), cmd.total ?? 0)}${stat(game.i18n.localize("RR.Def.FFCMD"), cmd.flatFootedTotal ?? 0)}`;
+    if (sr) cmdRow += stat(game.i18n.localize("RR.Def.SR"), sr);
     html += `<div class="arr-def-row">${cmdRow}</div>`;
-    html += noteGroup("CMD Notes", cmdNotes);
-    if (sr) html += noteGroup("SR Notes", srNotes);
+    html += noteGroup(game.i18n.localize("RR.Def.CMDNotes"), cmdNotes);
+    if (sr) html += noteGroup(game.i18n.localize("RR.Def.SRNotes"), srNotes);
 
-    html += `<div class="arr-def-row">${stat("Fort", sign(saves.fort?.total ?? 0))}${stat("Ref", sign(saves.ref?.total ?? 0))}${stat("Will", sign(saves.will?.total ?? 0))}</div>`;
-    html += noteGroup("Save Notes", saveNotes);
+    html += `<div class="arr-def-row">${stat(game.i18n.localize("RR.Def.Fort"), sign(saves.fort?.total ?? 0))}${stat(game.i18n.localize("RR.Def.Ref"), sign(saves.ref?.total ?? 0))}${stat(game.i18n.localize("RR.Def.Will"), sign(saves.will?.total ?? 0))}</div>`;
+    html += noteGroup(game.i18n.localize("RR.Def.SaveNotes"), saveNotes);
 
-    html += noteGroup("Damage Reduction", drNotes);
-    html += noteGroup("Energy Resistance", erNotes);
-    html += noteGroup("Conditions", conditions);
+    html += noteGroup(game.i18n.localize("RR.Def.DamageReduction"), drNotes);
+    html += noteGroup(game.i18n.localize("RR.Def.EnergyResistance"), erNotes);
+    html += noteGroup(game.i18n.localize("RR.Def.Conditions"), conditions);
 
     html += `</div>`;
     return html;
@@ -516,7 +516,7 @@ export class RollRequestChat {
     // Re-read flags from the message to get the latest state
     const currentFlags = message.flags?.[MODULE_ID];
     if (!currentFlags || !currentFlags.request) {
-      ui.notifications.error("Could not read roll request data from this message.");
+      ui.notifications.error(game.i18n.localize("RR.Notif.CantReadData"));
       return;
     }
 
@@ -537,13 +537,13 @@ export class RollRequestChat {
         actor = game.actors.get(targetActorId);
         tokenId = actor?.getActiveTokens?.()?.[0]?.id ?? null;
       }
-      if (!actor) { ui.notifications.warn("Target actor not found."); return; }
+      if (!actor) { ui.notifications.warn(game.i18n.localize("RR.Notif.TargetNotFound")); return; }
     } else {
       // All other roll types use the currently controlled token.
       const token = canvas.tokens.controlled[0];
       if (token) {
         actor = token.actor;
-        if (!actor) { ui.notifications.warn("Selected token has no actor."); return; }
+        if (!actor) { ui.notifications.warn(game.i18n.localize("RR.Notif.TokenNoActor")); return; }
         tokenId = token.id;
       } else if (game.settings.get(MODULE_ID, "use-configured-actor") && game.user.character) {
         // Nothing selected: fall back to the actor set in this user's configuration.
@@ -551,7 +551,7 @@ export class RollRequestChat {
         // Prefer an active token on the current scene for dedup; else key on the actor id.
         tokenId = actor.getActiveTokens?.()?.[0]?.id ?? actor.id;
       } else {
-        ui.notifications.warn("Please select a token first.");
+        ui.notifications.warn(game.i18n.localize("RR.Notif.SelectTokenFirst"));
         return;
       }
     }
@@ -561,16 +561,16 @@ export class RollRequestChat {
       const entry = currentFlags.targetedActors?.find(t => t.id === targetActorId);
       const canRoll = entry?.tokenUUID ? actor.isOwner : game.user.character?.id === targetActorId;
       if (!canRoll) {
-        ui.notifications.warn(entry?.tokenUUID
-          ? "You can only roll for tokens you own."
-          : "You can only roll for your own character.");
+        ui.notifications.warn(game.i18n.localize(entry?.tokenUUID
+          ? "RR.Notif.OnlyOwnTokens"
+          : "RR.Notif.OnlyOwnCharacter"));
         return;
       }
     }
 
     // --- Prevent self-aid in targeted sections ---
     if (rollType === "targetedAid" && actor.id === targetActorId) {
-      ui.notifications.warn("You cannot aid your own roll.");
+      ui.notifications.warn(game.i18n.localize("RR.Notif.CannotAidSelf"));
       return;
     }
 
@@ -579,38 +579,38 @@ export class RollRequestChat {
       const rolledActors = currentFlags.rolledActors || {};
       const aidResults = currentFlags.aidResults || {};
       if (rolledActors[tokenId] || aidResults[tokenId]) {
-        ui.notifications.warn(`${actor.name} has already used their action in this request.`);
+        ui.notifications.warn(game.i18n.format("RR.Notif.AlreadyUsedAction", { name: actor.name }));
         return;
       }
     } else if (rollType === "multiAid") {
       const rolledActors = currentFlags.rolledActors || {};
       const aidResults = currentFlags.aidResults || {};
       if (rolledActors[tokenId] || aidResults[tokenId]) {
-        ui.notifications.warn(`${actor.name} has already used their action in this request.`);
+        ui.notifications.warn(game.i18n.format("RR.Notif.AlreadyUsedAction", { name: actor.name }));
         return;
       }
     } else if (rollType === "aid") {
       const aidResults = currentFlags.aidResults || {};
       if (aidResults[tokenId]) {
-        ui.notifications.warn(`${actor.name} has already provided aid.`);
+        ui.notifications.warn(game.i18n.format("RR.Notif.AlreadyProvidedAid", { name: actor.name }));
         return;
       }
     } else if (rollType === "primary") {
       const rolledActors = currentFlags.rolledActors || {};
       if (Object.keys(rolledActors).length > 0) {
-        ui.notifications.warn("The primary check has already been rolled.");
+        ui.notifications.warn(game.i18n.localize("RR.Notif.PrimaryAlreadyRolled"));
         return;
       }
     } else if (rollType === "targeted") {
       const usedActorIds = currentFlags.usedActorIds || [];
       if (usedActorIds.includes(targetActorId)) {
-        ui.notifications.warn(`${actor.name} has already used their action in this request.`);
+        ui.notifications.warn(game.i18n.format("RR.Notif.AlreadyUsedAction", { name: actor.name }));
         return;
       }
     } else if (rollType === "targetedAid") {
       const usedActorIds = currentFlags.usedActorIds || [];
       if (usedActorIds.includes(actor.id)) {
-        ui.notifications.warn(`${actor.name} has already used their action in this request.`);
+        ui.notifications.warn(game.i18n.format("RR.Notif.AlreadyUsedAction", { name: actor.name }));
         return;
       }
     }
@@ -620,7 +620,7 @@ export class RollRequestChat {
       const sklInfo = actor.getSkillInfo?.(request.key);
       if (sklInfo && sklInfo.rt && sklInfo.rank === 0) {
         ui.notifications.warn(
-          `${actor.name} cannot roll ${request.name} — it requires training and they have no ranks.`
+          game.i18n.format("RR.Notif.TrainedOnly", { name: actor.name, check: request.name })
         );
         return;
       }
@@ -631,8 +631,8 @@ export class RollRequestChat {
       const maxPossible = RollRequestChat._getMaxRoll(actor, request);
       if (maxPossible !== null && maxPossible < dc) {
         const msg = (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid")
-          ? `${actor.name}: Success not possible, unable to aid another.`
-          : `${actor.name} cannot succeed on this check, even with a natural 20.`;
+          ? game.i18n.format("RR.Notif.CannotAidImpossible", { name: actor.name })
+          : game.i18n.format("RR.Notif.CannotSucceed", { name: actor.name });
         ui.notifications.warn(msg);
         return;
       }
@@ -656,7 +656,7 @@ export class RollRequestChat {
       }
     } catch (err) {
       console.error(`${MODULE_ID} | Roll error:`, err);
-      ui.notifications.error("An error occurred while rolling.");
+      ui.notifications.error(game.i18n.localize("RR.Notif.RollError"));
       return;
     }
 
@@ -826,18 +826,14 @@ export class RollRequestChat {
 
   static _getModeName(rollMode, showResults) {
     if (rollMode === "publicblind") {
-      return showResults ? "Blind Roll" : "Blind Roll, Results Hidden";
+      return game.i18n.localize(showResults ? "RR.Mode.BlindRoll" : "RR.Mode.BlindRollHidden");
     }
-    const baseNames = {
-      roll: "Public Roll",
-      gmroll: "Private GM Roll",
-      blindroll: "Blind GM Roll",
-    };
-    const base = baseNames[rollMode] || "Public Roll";
-    if ((rollMode === "roll" || rollMode === "gmroll") && !showResults) {
-      return `${base}, Results Hidden`;
+    if (rollMode === "blindroll") return game.i18n.localize("RR.Mode.BlindGMRoll");
+    if (rollMode === "gmroll") {
+      return game.i18n.localize(showResults ? "RR.Mode.PrivateGMRoll" : "RR.Mode.PrivateGMRollHidden");
     }
-    return base;
+    // "roll" (public) and any fallback
+    return game.i18n.localize(showResults ? "RR.Mode.PublicRoll" : "RR.Mode.PublicRollHidden");
   }
 
   // ----------------------------------------------------------
@@ -1369,7 +1365,7 @@ export class RollRequestChat {
 
   static async _buildAidResultHTML(entry, hideTotalFromPlayers = false) {
     const successClass = hideTotalFromPlayers ? "" : (entry.aidSuccess ? "arr-pass" : "arr-fail");
-    const bonusText = entry.aidSuccess ? `(+${entry.aidBonus})` : "(Failed)";
+    const bonusText = entry.aidSuccess ? `(+${entry.aidBonus})` : game.i18n.localize("RR.Aid.Failed");
 
     let notesHtml = "";
     if (entry.notes?.length) {
@@ -1481,7 +1477,7 @@ export class RollRequestChat {
 
     const showDetails = !hideTotalFromPlayers || game.user.isGM;
     const successClass = showDetails ? (entry.aidSuccess ? "arr-pass" : "arr-fail") : "";
-    const bonusText = entry.aidSuccess ? `(+${entry.aidBonus})` : "(Failed)";
+    const bonusText = entry.aidSuccess ? `(+${entry.aidBonus})` : game.i18n.localize("RR.Aid.Failed");
 
     let notesHtml = "";
     if (entry.notes?.length) {
