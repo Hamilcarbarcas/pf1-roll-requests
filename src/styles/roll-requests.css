@@ -184,6 +184,20 @@
   text-align: center;
 }
 
+/* ---- Highest/average aggregate line (check-aggregate setting) ---- */
+
+.arr-aggregate {
+  margin: 3px 0;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: #4b4a44;
+  text-align: center;
+}
+
+.arr-aggregate strong {
+  color: #782e22;
+}
+
 /* ---- Section Headers ---- */
 
 .arr-section-header {

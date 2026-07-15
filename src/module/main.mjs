@@ -57,6 +57,22 @@ Hooks.once("init", () => {
     default: true,
   });
 
+  // Setting to show a live highest/average aggregate on multi- and selection-check
+  // cards once more than one result has come in.
+  game.settings.register(MODULE_ID, "check-aggregate", {
+    name: "RR.Settings.CheckAggregate.Name",
+    hint: "RR.Settings.CheckAggregate.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      none: "RR.Settings.CheckAggregate.None",
+      average: "RR.Settings.CheckAggregate.Average",
+      highest: "RR.Settings.CheckAggregate.Highest",
+    },
+    default: "none",
+  });
+
   // Setting to allow Aid Another to grant scaling bonuses for high check results.
   game.settings.register(MODULE_ID, "uncap-aid-another", {
     name: "RR.Settings.UncapAid.Name",

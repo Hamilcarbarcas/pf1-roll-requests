@@ -9,6 +9,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Result aggregate on multi/selection cards.** A new **Multi-Check Result Aggregate** setting can show the running **highest** or **average** of the roll totals at the top of multi-check and selection-check cards, below the title/DC. It updates live as results come in and follows the same visibility as the individual totals. Default is off.
+
 ### Changed
 - All user-facing text (settings, menus, dialogs, chat cards, Monster Lore window, defenses panel, notifications) is now localizable via `game.i18n` (English `lang/en.json` included).
 

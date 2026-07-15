@@ -13,6 +13,9 @@
     {{! Optional aggregate summary slot (populated via a registered summary formatter) }}
     {{{summaryHtml}}}
 
+    {{! Optional highest/average aggregate line (controlled by the check-aggregate setting) }}
+    {{{aggregateHtml}}}
+
     <div class="arr-card-body">
         {{#each targetedActors}}
         <div class="arr-targeted-block" data-actor-id="{{this.id}}">

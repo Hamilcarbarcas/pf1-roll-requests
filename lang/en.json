@@ -7,6 +7,11 @@
   "RR.Settings.UseConfiguredActor.Hint": "When a user clicks a roll button without a token selected, roll for the actor configured in their User Configuration instead of warning them to select a token. Does not apply to per-target rolls on targeted cards.",
   "RR.Settings.UncapAid.Name": "Uncap Aid Another",
   "RR.Settings.UncapAid.Hint": "Allows Aid Another checks to grant an additional +1 per for every 5 points the result exceeds 10.",
+  "RR.Settings.CheckAggregate.Name": "Multi-Check Result Aggregate",
+  "RR.Settings.CheckAggregate.Hint": "On multi-check and selection-check cards, show a running aggregate of the roll totals (below the title/DC) once more than one result is in. Follows the same visibility as the totals themselves.",
+  "RR.Settings.CheckAggregate.None": "None",
+  "RR.Settings.CheckAggregate.Average": "Average result",
+  "RR.Settings.CheckAggregate.Highest": "Highest result",
 
   "RR.Menu.Blacklist.Name": "Excluded Actors",
   "RR.Menu.Blacklist.Label": "Manage Excluded Actors",
@@ -102,6 +107,8 @@
   "RR.Mode.BlindRollHidden": "Blind Roll, Results Hidden",
 
   "RR.Card.DCLabel": "DC:",
+  "RR.Card.AggregateHighest": "Highest:",
+  "RR.Card.AggregateAverage": "Average:",
   "RR.Card.RollCheck": "Roll Check",
   "RR.Card.ClickToRoll": "Click to roll {name}",
   "RR.Card.RollName": "Roll {name}",

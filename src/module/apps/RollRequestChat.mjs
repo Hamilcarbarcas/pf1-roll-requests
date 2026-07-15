@@ -77,6 +77,53 @@ export class RollRequestChat {
     return `<div class="arr-summary${gmOnly}">${inner}</div>`;
   }
 
+  /**
+   * Build the aggregate-line HTML — highest or average of the primary roll
+   * totals — for a card, or "" when disabled or not applicable. Controlled by
+   * the world setting `check-aggregate` ("none" | "average" | "highest"). Only
+   * multi- and selection-(targeted)-check cards aggregate, and only once more
+   * than one result is in.
+   *
+   * Visibility follows the totals themselves: the GM always sees it; players see
+   * it unless the card hides totals (publicblind), where it is wrapped
+   * `.gm-only`. The average is rounded to the nearest whole number.
+   *
+   * @param {object} flags - The card's current flag state.
+   * @returns {string}
+   */
+  static _renderAggregate(flags) {
+    let setting;
+    try {
+      setting = game.settings.get(MODULE_ID, "check-aggregate");
+    } catch {
+      return ""; // Setting not registered yet (e.g. very early card build)
+    }
+    if (setting !== "average" && setting !== "highest") return "";
+    if (flags.mode !== "multi" && flags.mode !== "targeted") return "";
+    // Auto-generated save-request cards aren't "selection checks"; keep them uncluttered.
+    if (flags.isSaveRequest) return "";
+
+    const results = flags.mode === "multi"
+      ? Object.values(flags.rolledActors || {})
+      : Object.values(flags.actorResults || {});
+    const totals = results
+      .map((r) => r?.total)
+      .filter((t) => typeof t === "number" && Number.isFinite(t));
+    if (totals.length < 2) return "";
+
+    let label, value;
+    if (setting === "highest") {
+      label = game.i18n.localize("RR.Card.AggregateHighest");
+      value = Math.max(...totals);
+    } else {
+      label = game.i18n.localize("RR.Card.AggregateAverage");
+      value = Math.round(totals.reduce((a, b) => a + b, 0) / totals.length);
+    }
+
+    const gmOnly = flags.rollMode === "publicblind" ? " gm-only" : "";
+    return `<div class="arr-aggregate${gmOnly}"><strong>${label}</strong> ${value}</div>`;
+  }
+
   // ----------------------------------------------------------
   // Create and post the chat card
   // ----------------------------------------------------------
@@ -110,6 +157,7 @@ export class RollRequestChat {
       targetedActors: requestData.targetedActors ?? [],
       isSaveRequest: requestData.isSaveRequest ?? false,
       summaryHtml: RollRequestChat._renderSummary(requestData),
+      aggregateHtml: RollRequestChat._renderAggregate(requestData),
     };
 
     const html = await renderTemplate(template, templateData);
@@ -1104,6 +1152,7 @@ export class RollRequestChat {
       targetedActors: flags.targetedActors ?? [],
       isSaveRequest: flags.isSaveRequest ?? false,
       summaryHtml: RollRequestChat._renderSummary(flags),
+      aggregateHtml: RollRequestChat._renderAggregate(flags),
     };
 
     let html = await renderTemplate(template, templateData);
