@@ -420,11 +420,6 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
         this.rollMode = val;
         this.showResults = false;
       }
-      if (this.rollMode === "blindroll") {
-        this.includeAid = false;
-        const aidCb = el.querySelector("#arr-include-aid");
-        if (aidCb) aidCb.checked = false;
-      }
     });
     el.querySelector("#arr-flavor")?.addEventListener("blur", (e) => { this.flavor = e.currentTarget.value; });
     el.querySelector("#arr-include-aid")?.addEventListener("change", (e) => { this.includeAid = e.currentTarget.checked; });

@@ -186,7 +186,7 @@ Hooks.once("ready", () => {
    * @param {number|null} [options.dc=null]       - The DC (null for no DC)
    * @param {boolean} [options.showDC=false]      - Whether the DC number is visible to players
    * @param {boolean} [options.showResults=false]  - Whether pass/fail indicators are visible to players
-   * @param {string} [options.rollMode="roll"]    - "roll", "gmroll", or "blindroll"
+   * @param {string} [options.rollMode="roll"]    - "roll", "gmroll", "publicblind" (public, totals obscured), or "blindroll" (GM-only whisper)
    * @param {string} [options.flavor=""]          - Flavor text
    * @param {boolean} [options.includeAid=true]   - Whether Aid Another is included (single mode only; forced off for dice)
    * @param {string} [options.summaryKey]         - Key of a summary formatter registered via
