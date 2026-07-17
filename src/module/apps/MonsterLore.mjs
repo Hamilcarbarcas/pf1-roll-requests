@@ -16,27 +16,28 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const MODULE_ID = "pf1-roll-requests";
 
 /** Monster types → the Knowledge skill used to identify them. */
+// `label` values are i18n keys, localized in _prepareContext at render time.
 export const MONSTER_TYPES = [
-  { key: "aberration",         label: "Aberrations",         skill: "kdu" },
-  { key: "animal",             label: "Animals",             skill: "kna" },
-  { key: "construct",          label: "Constructs",          skill: "kar" },
-  { key: "dragon",             label: "Dragons",             skill: "kar" },
-  { key: "fey",                label: "Fey",                 skill: "kna" },
-  { key: "humanoid",           label: "Humanoids",           skill: "klo" },
-  { key: "magical-beast",      label: "Magical Beasts",      skill: "kar" },
-  { key: "monstrous-humanoid", label: "Monstrous Humanoids", skill: "kna" },
-  { key: "ooze",               label: "Oozes",               skill: "kdu" },
-  { key: "outsider",           label: "Outsiders",           skill: "kpl" },
-  { key: "plant",              label: "Plants",              skill: "kna" },
-  { key: "undead",             label: "Undead",              skill: "kre" },
-  { key: "vermin",             label: "Vermin",              skill: "kna" },
+  { key: "aberration",         label: "RR.ML.Type.aberration",         skill: "kdu" },
+  { key: "animal",             label: "RR.ML.Type.animal",             skill: "kna" },
+  { key: "construct",          label: "RR.ML.Type.construct",          skill: "kar" },
+  { key: "dragon",             label: "RR.ML.Type.dragon",             skill: "kar" },
+  { key: "fey",                label: "RR.ML.Type.fey",                skill: "kna" },
+  { key: "humanoid",           label: "RR.ML.Type.humanoid",           skill: "klo" },
+  { key: "magical-beast",      label: "RR.ML.Type.magical-beast",      skill: "kar" },
+  { key: "monstrous-humanoid", label: "RR.ML.Type.monstrous-humanoid", skill: "kna" },
+  { key: "ooze",               label: "RR.ML.Type.ooze",               skill: "kdu" },
+  { key: "outsider",           label: "RR.ML.Type.outsider",           skill: "kpl" },
+  { key: "plant",              label: "RR.ML.Type.plant",              skill: "kna" },
+  { key: "undead",             label: "RR.ML.Type.undead",             skill: "kre" },
+  { key: "vermin",             label: "RR.ML.Type.vermin",             skill: "kna" },
 ];
 
-/** Rarity → DC base value. */
+/** Rarity → DC base value. `label` values are i18n keys. */
 export const RARITY = [
-  { key: "common", label: "Common", base: 5 },
-  { key: "normal", label: "Normal", base: 10 },
-  { key: "rare",   label: "Rare",   base: 15 },
+  { key: "common", label: "RR.ML.Rarity.common", base: 5 },
+  { key: "normal", label: "RR.ML.Rarity.normal", base: 10 },
+  { key: "rare",   label: "RR.ML.Rarity.rare",   base: 15 },
 ];
 
 /** Challenge Rating options. Fractional CRs contribute 1 to the DC. */
@@ -130,7 +131,7 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
     classes: ["pf1-monster-lore"],
     tag: "div",
     window: {
-      title: "Monster Lore",
+      title: "RR.ML.Window",
       icon: "fas fa-dragon",
       resizable: true,
       minimizable: true,
@@ -196,18 +197,18 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const type = this._selectedType();
-    context.types = MONSTER_TYPES.map(t => ({ ...t, selected: t.key === this.monsterType }));
-    context.rarities = RARITY.map(r => ({ ...r, selected: r.key === this.rarity }));
+    context.types = MONSTER_TYPES.map(t => ({ ...t, label: game.i18n.localize(t.label), selected: t.key === this.monsterType }));
+    context.rarities = RARITY.map(r => ({ ...r, label: game.i18n.localize(r.label), selected: r.key === this.rarity }));
     context.crOptions = CR_OPTIONS.map(c => ({ ...c, selected: c.value === this.cr }));
     context.skillName = this._skillName(type.skill);
-    context.typeLabel = type.label;
+    context.typeLabel = game.i18n.localize(type.label);
     context.dc = this._computeDC();
 
     // Reference monster (optional)
     const actor = this.referenceActor;
     context.hasReference = !!actor;
     context.monsterImg = actor ? (actor.img || "icons/svg/mystery-man.svg") : "";
-    context.monsterName = actor ? (actor.name || "Unknown") : "";
+    context.monsterName = actor ? (actor.name || game.i18n.localize("RR.ML.Unknown")) : "";
     context.crLabel = pf1.utils.CR.fromNumber(this.cr);
     return context;
   }
@@ -258,7 +259,7 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const actor = await fromUuid(data.uuid);
     if (!actor) {
-      ui.notifications.warn("Could not resolve actor.");
+      ui.notifications.warn(game.i18n.localize("RR.ML.Notif.ResolveActor"));
       return;
     }
     this._applyReferenceActor(actor);
@@ -271,9 +272,9 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
     if (controlled?.length === 1 && controlled[0]?.actor) {
       this._applyReferenceActor(controlled[0].actor);
     } else if (controlled?.length > 1) {
-      ui.notifications.warn("Select a single token to use as the monster.");
+      ui.notifications.warn(game.i18n.localize("RR.ML.Notif.SelectSingle"));
     } else {
-      ui.notifications.info("No token selected. Select a token or drag an actor here.");
+      ui.notifications.info(game.i18n.localize("RR.ML.Notif.NoToken"));
     }
   }
 
@@ -289,7 +290,7 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
   static async #onRequestChecks() {
     const api = game.pf1RollRequests;
     if (!api?.createRequest) {
-      ui.notifications.error("pf1-roll-requests createRequest API is unavailable.");
+      ui.notifications.error(game.i18n.localize("RR.ML.Notif.ApiUnavailable"));
       return;
     }
     const type = this._selectedType();
@@ -303,10 +304,10 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
       rollMode: "roll",
       showDC: false,
       showResults: true,
-      flavor: "Monster Lore",
+      flavor: game.i18n.localize("RR.ML.Flavor"),
       summaryKey: MONSTER_LORE_SUMMARY_KEY,
     });
-    ui.notifications.info(`Monster Lore: requested ${this._skillName(type.skill)} (DC ${dc}).`);
+    ui.notifications.info(game.i18n.format("RR.ML.Notif.Requested", { skill: this._skillName(type.skill), dc }));
   }
 
   // ---- Lifecycle / Singleton ----
@@ -320,7 +321,7 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static openWindow() {
     if (!game.user.isGM) {
-      ui.notifications.warn("Only the GM can use Monster Lore.");
+      ui.notifications.warn(game.i18n.localize("RR.ML.Notif.GMOnly"));
       return;
     }
     if (!MonsterLore._instance) MonsterLore._instance = new MonsterLore();
@@ -348,5 +349,5 @@ export function monsterLoreSummary(flags) {
     if (typeof r.total !== "number") continue;
     if (r.total >= dc) questions += 1 + Math.floor((r.total - dc) / 5);
   }
-  return `<i class="fas fa-circle-question"></i> <strong>Questions earned:</strong> ${questions}`;
+  return `<i class="fas fa-circle-question"></i> <strong>${game.i18n.localize("RR.ML.QuestionsEarned")}</strong> ${questions}`;
 }

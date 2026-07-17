@@ -28,8 +28,8 @@ Hooks.once("init", () => {
 
   // Setting to auto-convert PF1 attack messages with saves into roll-request cards
   game.settings.register(MODULE_ID, "auto-save-request", {
-    name: "Auto-Request Saving Throws",
-    hint: "Automatically convert PF1 attack chat messages that include a saving throw into embedded targeted roll-request cards.",
+    name: "RR.Settings.AutoSave.Name",
+    hint: "RR.Settings.AutoSave.Hint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -38,8 +38,8 @@ Hooks.once("init", () => {
 
   // Setting to toggle the token-control-bar button
   game.settings.register(MODULE_ID, "show-button", {
-    name: "Show Token Control Button",
-    hint: "Toggle the Roll Request button in the token controls bar.",
+    name: "RR.Settings.ShowButton.Name",
+    hint: "RR.Settings.ShowButton.Hint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -49,18 +49,34 @@ Hooks.once("init", () => {
 
   // Setting to fall back to a user's configured actor when no token is selected.
   game.settings.register(MODULE_ID, "use-configured-actor", {
-    name: "Use Configured Actor When None Selected",
-    hint: "When a user clicks a roll button without a token selected, roll for the actor configured in their User Configuration instead of warning them to select a token. Does not apply to per-target rolls on targeted cards.",
+    name: "RR.Settings.UseConfiguredActor.Name",
+    hint: "RR.Settings.UseConfiguredActor.Hint",
     scope: "world",
     config: true,
     type: Boolean,
     default: true,
   });
 
+  // Setting to show a live highest/average aggregate on multi- and selection-check
+  // cards once more than one result has come in.
+  game.settings.register(MODULE_ID, "check-aggregate", {
+    name: "RR.Settings.CheckAggregate.Name",
+    hint: "RR.Settings.CheckAggregate.Hint",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      none: "RR.Settings.CheckAggregate.None",
+      average: "RR.Settings.CheckAggregate.Average",
+      highest: "RR.Settings.CheckAggregate.Highest",
+    },
+    default: "none",
+  });
+
   // Setting to allow Aid Another to grant scaling bonuses for high check results.
   game.settings.register(MODULE_ID, "uncap-aid-another", {
-    name: "Uncap Aid Another",
-    hint: "Allows Aid Another checks to grant an additional +1 per for every 5 points the result exceeds 10.",
+    name: "RR.Settings.UncapAid.Name",
+    hint: "RR.Settings.UncapAid.Hint",
     scope: "world",
     config: true,
     type: Boolean,
@@ -77,9 +93,9 @@ Hooks.once("init", () => {
 
   // Settings-menu entry to view and restore excluded actors.
   game.settings.registerMenu(MODULE_ID, "npc-blacklist-menu", {
-    name: "Excluded Actors",
-    label: "Manage Excluded Actors",
-    hint: "View and restore player-owned NPCs that have been excluded from the Selection Check prompt list.",
+    name: "RR.Menu.Blacklist.Name",
+    label: "RR.Menu.Blacklist.Label",
+    hint: "RR.Menu.Blacklist.Hint",
     icon: "fa-solid fa-user-slash",
     type: BlacklistConfig,
     restricted: true,
@@ -103,9 +119,9 @@ Hooks.once("init", () => {
 
   // Settings-menu entry to toggle categories and Quick Actions.
   game.settings.registerMenu(MODULE_ID, "roll-options-menu", {
-    name: "Roll Categories & Quick Actions",
-    label: "Configure Roll Options",
-    hint: "Show or hide entire roll categories and individual Quick Actions in the Roll Request dialog.",
+    name: "RR.Menu.RollOptions.Name",
+    label: "RR.Menu.RollOptions.Label",
+    hint: "RR.Menu.RollOptions.Hint",
     icon: "fa-solid fa-sliders",
     type: RollOptionsConfig,
     restricted: true,
@@ -135,7 +151,7 @@ Hooks.on("getSceneControlButtons", (controls) => {
   if (tokenControls) {
     tokenControls.tools["pf1-roll-request"] = {
       name: "pf1-roll-request",
-      title: "Request Roll",
+      title: game.i18n.localize("RR.Common.RequestRoll"),
       icon: "fas fa-dice-d20",
       button: true,
       toggle: false,
@@ -153,7 +169,7 @@ Hooks.once("ready", () => {
 
   game.pf1RollRequests.requestRoll = () => {
     if (!game.user.isGM) {
-      ui.notifications.warn("Only the GM can create roll requests.");
+      ui.notifications.warn(game.i18n.localize("RR.Notif.GMOnly"));
       return;
     }
     new RollRequestDialog().render(true);
@@ -170,7 +186,7 @@ Hooks.once("ready", () => {
    * @param {number|null} [options.dc=null]       - The DC (null for no DC)
    * @param {boolean} [options.showDC=false]      - Whether the DC number is visible to players
    * @param {boolean} [options.showResults=false]  - Whether pass/fail indicators are visible to players
-   * @param {string} [options.rollMode="roll"]    - "roll", "gmroll", or "blindroll"
+   * @param {string} [options.rollMode="roll"]    - "roll", "gmroll", "publicblind" (public, totals obscured), or "blindroll" (GM-only whisper)
    * @param {string} [options.flavor=""]          - Flavor text
    * @param {boolean} [options.includeAid=true]   - Whether Aid Another is included (single mode only; forced off for dice)
    * @param {string} [options.summaryKey]         - Key of a summary formatter registered via
@@ -212,19 +228,19 @@ Hooks.once("ready", () => {
    */
   game.pf1RollRequests.createRequest = async (options = {}) => {
     if (!game.user.isGM) {
-      ui.notifications.warn("Only the GM can create roll requests.");
+      ui.notifications.warn(game.i18n.localize("RR.Notif.GMOnly"));
       return;
     }
 
     const { type, key } = options;
     if (!type || !key) {
-      ui.notifications.error("createRequest requires 'type' and 'key' parameters.");
+      ui.notifications.error(game.i18n.localize("RR.Notif.CreateRequestParams"));
       return;
     }
 
     const validTypes = ["ability", "save", "skill", "dice"];
     if (!validTypes.includes(type)) {
-      ui.notifications.error(`Invalid type "${type}". Must be one of: ${validTypes.join(", ")}`);
+      ui.notifications.error(game.i18n.format("RR.Notif.InvalidType", { type, types: validTypes.join(", ") }));
       return;
     }
 
@@ -255,7 +271,7 @@ Hooks.once("ready", () => {
     const targetedActors = options.targetedActors ?? [];
 
     if (mode === "targeted" && targetedActors.length === 0) {
-      ui.notifications.error("createRequest with mode 'targeted' requires a non-empty targetedActors array.");
+      ui.notifications.error(game.i18n.localize("RR.Notif.TargetedNeedsActors"));
       return;
     }
 

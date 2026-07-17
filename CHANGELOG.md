@@ -9,6 +9,15 @@
 
 ## [Unreleased]
 
+### Added
+- **Monster Lore window.** A Knowledge-check helper, opened from the new **Monster Lore** Quick Action. Pick a creature type (auto-selects the relevant Knowledge skill), CR, and rarity — or drag/select a reference token to auto-fill CR and type — then fire a public multi-check whose DC is hidden from players. The card shows a live "Questions earned" tally that grows as party members pass.
+- **Result aggregate on multi/selection cards.** A new **Multi-Check Result Aggregate** setting can show the running **highest** or **average** of the roll totals at the top of multi-check and selection-check cards, below the title/DC. It updates live as results come in and follows the same visibility as the individual totals. Default is off.
+
+### Changed
+- All user-facing text (settings, menus, dialogs, chat cards, Monster Lore window, defenses panel, notifications) is now localizable via `game.i18n` (English `lang/en.json` included).
+- Reordered the module settings and adjusted several defaults for a clearer configuration flow.
+- Reorganized the module's source into a `src/` directory (`src/module`, `src/templates`, `src/styles`); the packaged release layout and manifest paths were updated to match.
+
 ## [1.1.0] - 2026-06-30
 
 ### Added

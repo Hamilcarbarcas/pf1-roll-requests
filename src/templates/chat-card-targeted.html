@@ -2,7 +2,7 @@
     <header class="arr-card-header flexrow">
         <h3 class="arr-card-title">{{{name}}}</h3>
         {{#if dc}}
-        <h3 class="arr-dc-display {{#unless showDC}}gm-only{{/unless}}">DC: {{dc}}</h3>
+        <h3 class="arr-dc-display {{#unless showDC}}gm-only{{/unless}}">{{localize "RR.Card.DCLabel"}} {{dc}}</h3>
         {{/if}}
     </header>
 
@@ -12,6 +12,9 @@
 
     {{! Optional aggregate summary slot (populated via a registered summary formatter) }}
     {{{summaryHtml}}}
+
+    {{! Optional highest/average aggregate line (controlled by the check-aggregate setting) }}
+    {{{aggregateHtml}}}
 
     <div class="arr-card-body">
         {{#each targetedActors}}
@@ -23,17 +26,17 @@
                     <img class="arr-actor-img" src="{{this.img}}" alt="{{this.name}}" />
                     <span class="arr-actor-name">{{this.name}}</span>
                     {{#if @root.isSaveRequest}}
-                    <i class="arr-defenses-icon fas fa-chevron-down" title="Show defenses"></i>
+                    <i class="arr-defenses-icon fas fa-chevron-down" title="{{localize "RR.Card.ShowDefenses"}}"></i>
                     {{/if}}
                     {{#if @root.includeAid}}
                     <span class="arr-aid-bonus-display" style="display:none;">
-                        (<strong class="arr-aid-bonus-value">+0</strong> Aid)
+                        (<strong class="arr-aid-bonus-value">+0</strong> {{localize "RR.Card.AidSuffix"}})
                     </span>
                     {{/if}}
                 </div>
                 <!-- Result injected here by JS once rolled (replaces roll button) -->
                 <div class="arr-inline-result arr-result-total" style="display:none;"></div>
-                <a class="arr-roll-btn" data-action="rollTargeted" data-actor-id="{{this.id}}" title="Roll Check">
+                <a class="arr-roll-btn" data-action="rollTargeted" data-actor-id="{{this.id}}" title="{{localize "RR.Card.RollCheckTitle"}}">
                     <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
                 </a>
             </div>
@@ -47,8 +50,8 @@
             <!-- Aid Another sub-section -->
             <div class="arr-targeted-aid-section">
                 <div class="arr-roll-prompt flexrow arr-targeted-aid-prompt">
-                    <span class="arr-prompt-text">Aid Another (DC 10)</span>
-                    <a class="arr-roll-btn arr-roll-btn-sm" data-action="rollTargetedAid" data-target-actor-id="{{this.id}}" title="Aid Another">
+                    <span class="arr-prompt-text">{{localize "RR.Card.AidAnotherDC"}}</span>
+                    <a class="arr-roll-btn arr-roll-btn-sm" data-action="rollTargetedAid" data-target-actor-id="{{this.id}}" title="{{localize "RR.Card.AidAnother"}}">
                         <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
                     </a>
                 </div>

@@ -17,7 +17,7 @@ export class BlacklistConfig extends HandlebarsApplicationMixin(ApplicationV2) {
     tag: "div",
     classes: ["pf1-roll-requests", "roll-request-blacklist"],
     window: {
-      title: "Roll Requests — Excluded Actors",
+      title: "RR.Window.Blacklist",
       icon: "fa-solid fa-user-slash",
       resizable: true,
     },
@@ -39,7 +39,7 @@ export class BlacklistConfig extends HandlebarsApplicationMixin(ApplicationV2) {
         const actor = game.actors.get(id);
         return {
           id,
-          name: actor?.name ?? `(missing actor: ${id})`,
+          name: actor?.name ?? game.i18n.format("RR.Blacklist.MissingActor", { id }),
           img: actor?.img ?? "icons/svg/mystery-man.svg",
           missing: !actor,
         };

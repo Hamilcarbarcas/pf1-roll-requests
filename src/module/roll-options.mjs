@@ -14,12 +14,13 @@ import { MonsterLore } from "./apps/MonsterLore.mjs";
  * `text` must match the header rendered by RollRequestDialog so the config
  * window and the dialog stay in sync.
  */
+// `text` values are i18n keys, localized at the point they are rendered.
 export const ROLL_CATEGORIES = [
-  { id: "ability", text: "Ability Check" },
-  { id: "save", text: "Saving Throw" },
-  { id: "skill", text: "Skill Check" },
-  { id: "dice", text: "Dice" },
-  { id: "quick", text: "Quick Actions" },
+  { id: "ability", text: "RR.Category.Ability" },
+  { id: "save", text: "RR.Category.Save" },
+  { id: "skill", text: "RR.Category.Skill" },
+  { id: "dice", text: "RR.Category.Dice" },
+  { id: "quick", text: "RR.Category.Quick" },
 ];
 
 /**
@@ -39,9 +40,9 @@ export const ROLL_CATEGORIES = [
 export const QUICK_ACTIONS = [
   {
     key: "spot",
-    label: "Spot Checks",
+    label: "RR.Quick.Spot",
     icon: "fa-eye",
-    request: { type: "skill", key: "per", name: "Perception" },
+    request: { type: "skill", key: "per", name: "RR.Quick.SpotRollName" },
     promptActors: true,
     config: {
       mode: "targeted",
@@ -58,7 +59,7 @@ export const QUICK_ACTIONS = [
     // firing a declarative request; the window builds and sends its own
     // Knowledge multi-check. Closes the Roll Request dialog on use.
     key: "monster-lore",
-    label: "Monster Lore",
+    label: "RR.Quick.MonsterLore",
     icon: "fa-dragon",
     closeOnUse: true,
     callback: () => MonsterLore.openWindow(),
