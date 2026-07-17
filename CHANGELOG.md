@@ -7,7 +7,7 @@
   release body. If no matching section exists, the release fails.
 -->
 
-## [Unreleased]
+## [1.2.0] - 2026-07-17
 
 ### Added
 - **Monster Lore window.** A Knowledge-check helper, opened from the new **Monster Lore** Quick Action. Pick a creature type (auto-selects the relevant Knowledge skill), CR, and rarity — or drag/select a reference token to auto-fill CR and type — then fire a public multi-check whose DC is hidden from players. The card shows a live "Questions earned" tally that grows as party members pass.
