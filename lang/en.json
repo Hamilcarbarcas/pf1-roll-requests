@@ -189,7 +189,7 @@
   "RR.ML.DropZone": "Select a token or drag an actor here (optional)",
   "RR.ML.MonsterType": "Monster Type",
   "RR.ML.ChallengeRating": "Challenge Rating",
-  "RR.ML.Rarity": "Rarity",
+  "RR.ML.RarityLabel": "Rarity",
   "RR.ML.KnowledgeSkill": "Knowledge Skill",
   "RR.ML.CheckDC": "Check DC",
   "RR.ML.RequestChecks": "Request Knowledge Checks"
