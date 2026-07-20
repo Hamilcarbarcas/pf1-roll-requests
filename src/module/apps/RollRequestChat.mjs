@@ -228,6 +228,52 @@ export class RollRequestChat {
 
     // Bind click-to-expand on result rows
     RollRequestChat._bindExpandToggle(card);
+
+    // Bind the standalone check button (mirrors PF1's native save button) that
+    // auto-generated skill/ability check cards carry in the preserved PF1 footer,
+    // outside .arr-card. Same behaviour as the save button: roll for the clicker's
+    // selected token(s) as a standalone PF1 roll card.
+    const root = html instanceof HTMLElement ? html : html?.[0];
+    const checkBtn = root?.querySelector?.(".rr-check-button");
+    if (checkBtn && !checkBtn.dataset.bound) {
+      checkBtn.dataset.bound = "1";
+      checkBtn.addEventListener("click", (ev) => RollRequestChat._onCheckButton(ev));
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Standalone check button handler — mirrors PF1's native save button.
+  // Rolls the configured skill/ability check for the clicker's controlled
+  // token(s) (or their configured character), as standalone roll cards.
+  // ----------------------------------------------------------
+
+  static async _onCheckButton(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const button = event.currentTarget;
+    const type = button.dataset.checkType;
+    const key = button.dataset.checkKey;
+    const dcRaw = button.dataset.dc;
+    const dc = dcRaw !== "" && dcRaw != null ? parseInt(dcRaw, 10) : undefined;
+    if (!type || !key) return;
+
+    let actors = (canvas.tokens?.controlled ?? []).map(t => t.actor).filter(Boolean);
+    if (!actors.length && game.user.character) actors = [game.user.character];
+    if (!actors.length) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.SelectTokenFirst"));
+      return;
+    }
+
+    for (const actor of actors) {
+      try {
+        const opts = { event };
+        if (dc != null && !Number.isNaN(dc)) opts.dc = dc;
+        if (type === "skill") await actor.rollSkill(key, opts);
+        else if (type === "ability") await actor.rollAbilityTest(key, opts);
+      } catch (err) {
+        console.error(`${MODULE_ID} | Check button roll error for ${actor?.name}:`, err);
+      }
+    }
   }
 
   // ----------------------------------------------------------
@@ -664,7 +710,10 @@ export class RollRequestChat {
     }
 
     // --- Validation: Trained-only check ---
-    if (request.type === "skill") {
+    // Skipped for save-request-style cards (auto-generated from an attack card):
+    // those behave exactly like a saving throw — every target always rolls,
+    // regardless of ranks or feasibility.
+    if (request.type === "skill" && !currentFlags.isSaveRequest) {
       const sklInfo = actor.getSkillInfo?.(request.key);
       if (sklInfo && sklInfo.rt && sklInfo.rank === 0) {
         ui.notifications.warn(
@@ -675,7 +724,7 @@ export class RollRequestChat {
     }
 
     // --- Validation: Natural-20 feasibility check ---
-    if (dc != null && request.type !== "dice" && request.type !== "save") {
+    if (dc != null && request.type !== "dice" && request.type !== "save" && !currentFlags.isSaveRequest) {
       const maxPossible = RollRequestChat._getMaxRoll(actor, request);
       if (maxPossible !== null && maxPossible < dc) {
         const msg = (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid")

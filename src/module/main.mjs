@@ -5,6 +5,7 @@
 import { RollRequestDialog } from "./apps/RollRequestDialog.mjs";
 import { RollRequestChat } from "./apps/RollRequestChat.mjs";
 import { SaveAutoRequest } from "./apps/SaveAutoRequest.mjs";
+import { ActionCheckConfig } from "./apps/ActionCheckConfig.mjs";
 import { BlacklistConfig } from "./apps/BlacklistConfig.mjs";
 import { RollOptionsConfig } from "./apps/RollOptionsConfig.mjs";
 import { registerQuickAction, unregisterQuickAction, getQuickActions } from "./roll-options.mjs";
@@ -140,6 +141,11 @@ Hooks.once("ready", () => {
 Hooks.on("renderChatMessageHTML", (message, html, data) => {
   SaveAutoRequest.onRenderChatMessage(message, html);
   RollRequestChat.onRenderChatMessage(message, html, data);
+});
+
+// ---- Inject skill/ability check options into the item-action sheet ----
+Hooks.on("renderItemActionSheet", (app, html) => {
+  ActionCheckConfig.onRenderActionSheet(app, html);
 });
 
 // ---- Register a scene-control button ----

@@ -1,6 +1,6 @@
 {
   "RR.Settings.AutoSave.Name": "Auto-Request Saving Throws",
-  "RR.Settings.AutoSave.Hint": "Automatically convert PF1 attack chat messages that include a saving throw into embedded targeted roll-request cards.",
+  "RR.Settings.AutoSave.Hint": "Automatically convert PF1 attack chat messages that include a saving throw — or a configured skill/ability check (set on the action's Saving Throw tab) — into embedded targeted roll-request cards.",
   "RR.Settings.ShowButton.Name": "Show Token Control Button",
   "RR.Settings.ShowButton.Hint": "Toggle the Roll Request button in the token controls bar.",
   "RR.Settings.UseConfiguredActor.Name": "Use Configured Actor When None Selected",
@@ -58,6 +58,12 @@
   "RR.Category.Skill": "Skill Check",
   "RR.Category.Dice": "Dice",
   "RR.Category.Quick": "Quick Actions",
+
+  "RR.Action.SkillCheck": "Skill Check",
+  "RR.Action.AbilityCheck": "Ability Check",
+  "RR.Action.Skill": "Skill",
+  "RR.Action.Ability": "Ability",
+  "RR.Action.CheckEffect": "Check Effect",
 
   "RR.Quick.Spot": "Spot Checks",
   "RR.Quick.SpotRollName": "Perception",
@@ -120,6 +126,7 @@
   "RR.Card.RollToAssist": "Roll to assist (DC 10)",
   "RR.Card.AidAnotherDC": "Aid Another (DC 10)",
   "RR.Card.ShowDefenses": "Show defenses",
+  "RR.Card.CheckButton": "{name} DC {dc}",
 
   "RR.Def.Defenses": "Defenses",
   "RR.Def.AC": "AC",

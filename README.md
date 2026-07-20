@@ -60,6 +60,19 @@ When a PF1e attack action that includes a saving throw is posted to chat, the mo
 
 This feature is enabled by default and can be toggled in **Settings → Module Settings → Auto-Request Saving Throws**.
 
+#### Skill & Ability Check Actions
+
+The same auto-request pipeline can be driven by a **skill check** or **ability check** instead of a saving throw. On any item action's **Saving Throw** tab, the **Type** dropdown now includes **Skill Check** and **Ability Check** alongside Fortitude / Reflex / Will:
+
+- Selecting **Skill Check** reveals a skill picker and a DC field.
+- Selecting **Ability Check** reveals an ability picker and a DC field.
+- The DC accepts a formula (resolved against the acting actor at roll time), just like a save DC. A plain number works too.
+- An optional **Check Effect** note mirrors the save's effect description.
+
+A check is **mutually exclusive** with a saving throw on the same action — the Type field holds one choice. When the action is used against targets, it produces the same embedded targeted roll-request card that saves do (per-target rows, Roll All / Roll NPCs, pass/fail against the DC, etc.), and the same standalone check button PF1 gives saves — a "Strength DC 15" button in the card footer that rolls the check for your selected token. The configuration is stored on the item, so it travels with copied/imported items.
+
+From a player's perspective the card is indistinguishable from a saving throw — same button, same placement, same behaviour — it simply rolls the chosen skill or ability check instead of Fort/Ref/Will. There is no Aid Another on these checks (matching saves), and every target can always roll regardless of ranks or feasibility (again, matching saves).
+
 **GM view:**
 
 - Each targeted token gets a compact row with their portrait, name, and a roll button.

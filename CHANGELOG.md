@@ -7,6 +7,11 @@
   release body. If no matching section exists, the release fails.
 -->
 
+## [Unreleased]
+
+### Added
+- **Skill & ability check actions.** An item action's **Saving Throw → Type** dropdown now offers **Skill Check** and **Ability Check** in addition to Fortitude / Reflex / Will. Picking one reveals a skill/ability picker, a DC field (formula-capable, like a save DC), and an optional effect note. Using the action against targets produces the same embedded targeted roll-request card that saving throws do — including a standalone check button in the card footer mirroring PF1's native save button (rolls the check for your selected token). From a player's perspective the card is indistinguishable from a saving throw: same button, placement, and behaviour, with no Aid Another and every target always able to roll. A check is mutually exclusive with a save on the same action, and the config is stored on the item so it travels with the item. Honours the existing **Auto-Request Saving Throws** setting.
+
 ## [1.2.0] - 2026-07-17
 
 ### Added

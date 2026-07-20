@@ -1,10 +1,12 @@
 // ============================================================
 // PF1 Roll Requests — Save Auto-Request
-// Converts PF1 action chat messages that contain a saving throw
+// Converts PF1 action chat messages that contain a saving throw —
+// or a configured skill/ability check (see ActionCheckConfig) —
 // into an embedded targeted roll-request card on first render.
 // ============================================================
 
 import { RollRequestChat } from "./RollRequestChat.mjs";
+import { ActionCheckConfig } from "./ActionCheckConfig.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -22,21 +24,107 @@ export class SaveAutoRequest {
 
     if (!game.settings.get(MODULE_ID, "auto-save-request")) return;
 
-    const saveType = message.system?.save?.type;
-    if (!saveType) return;
     const targetUUIDs = message.system?.targets ?? [];
     if (!targetUUIDs.length) return;
 
     // Only the GM initializes (prevents race conditions on multi-client render)
     if (!game.user.isGM) return;
 
+    // Resolve what to request: a system saving throw, or a configured
+    // skill/ability check flagged on the originating action.
+    const descriptor = SaveAutoRequest._resolveDescriptor(message);
+    if (!descriptor) return;
+
     // Prevent duplicate concurrent initializations for the same message
     if (SaveAutoRequest._pendingInit.has(message.id)) return;
     SaveAutoRequest._pendingInit.add(message.id);
 
-    SaveAutoRequest._initialize(message, html).finally(() => {
+    SaveAutoRequest._initialize(message, html, descriptor).finally(() => {
       SaveAutoRequest._pendingInit.delete(message.id);
     });
+  }
+
+  // ----------------------------------------------------------
+  // Resolve the request descriptor for a chat message, or null when
+  // there's nothing to convert. Saving throws take priority; failing
+  // that, an ActionCheckConfig skill/ability flag on the source action.
+  // ----------------------------------------------------------
+
+  static _resolveDescriptor(message) {
+    // Priority 1: a system saving throw.
+    const saveType = message.system?.save?.type;
+    if (saveType) {
+      const rawLabel = pf1?.config?.savingThrows?.[saveType] ?? saveType;
+      const saveName = game.i18n.format("RR.SaveName", { name: game.i18n.localize(rawLabel) });
+      return {
+        type: "save",
+        key: saveType,
+        name: saveName,
+        dc: message.system.save.dc ?? null,
+      };
+    }
+
+    // Priority 2: a configured skill/ability check on the originating action.
+    const actionId = message.system?.action?.id;
+    const itemId = message.system?.item?.id;
+    if (!actionId || !itemId) return null;
+
+    const actor = message.system.actor ? fromUuidSync(message.system.actor) : null;
+    const item = actor?.items?.get(itemId) ?? null;
+    if (!item) return null;
+
+    const cfg = item.getFlag(MODULE_ID, "checks")?.[actionId];
+    if (!cfg || (cfg.type !== "skill" && cfg.type !== "ability")) return null;
+
+    return {
+      type: cfg.type,
+      key: cfg.key,
+      name: ActionCheckConfig.checkName(cfg.type, cfg.key),
+      dcFormula: cfg.dc ?? null,
+      item,
+      actor,
+      actionId,
+    };
+  }
+
+  // ----------------------------------------------------------
+  // Resolve a check DC formula to a number, against the action's
+  // (else item's, else actor's) roll data. Plain integers short-circuit.
+  // ----------------------------------------------------------
+
+  static _resolveCheckDC(descriptor) {
+    const formula = descriptor.dcFormula;
+    if (formula == null || formula === "") return null;
+    if (typeof formula === "number") return Number.isFinite(formula) ? formula : null;
+
+    const str = String(formula).trim();
+    if (str === "") return null;
+    if (/^\d+$/.test(str)) return Number(str);
+
+    let rollData = {};
+    try {
+      const action = descriptor.item?.actions?.get?.(descriptor.actionId);
+      rollData = action?.getRollData?.()
+        ?? descriptor.item?.getRollData?.()
+        ?? descriptor.actor?.getRollData?.()
+        ?? {};
+    } catch {
+      rollData = {};
+    }
+
+    const RollCls = pf1?.dice?.RollPF ?? globalThis.RollPF;
+    try {
+      if (RollCls?.safeRollSync) {
+        const total = RollCls.safeRollSync(str, rollData)?.total;
+        return Number.isFinite(total) ? total : null;
+      }
+      // Fallback: a plain synchronous roll.
+      const roll = new Roll(str, rollData);
+      roll.evaluateSync();
+      return Number.isFinite(roll.total) ? roll.total : null;
+    } catch {
+      return null;
+    }
   }
 
   // ----------------------------------------------------------
@@ -44,9 +132,10 @@ export class SaveAutoRequest {
   // update message to a proper targeted roll-request card.
   // ----------------------------------------------------------
 
-  static async _initialize(message, html) {
-    const saveType = message.system.save.type;
-    const dc = message.system.save.dc ?? null;
+  static async _initialize(message, html, descriptor) {
+    const dc = descriptor.type === "save"
+      ? (descriptor.dc != null ? Number(descriptor.dc) : null)
+      : SaveAutoRequest._resolveCheckDC(descriptor);
     const targetUUIDs = message.system.targets;
 
     // Resolve token UUIDs to targetedActors entries.
@@ -71,15 +160,21 @@ export class SaveAutoRequest {
     }
     if (!targetedActors.length) return;
 
-    const { headerHtml, footerHtml } = SaveAutoRequest._extractPf1Content(html);
+    const { headerHtml, footerHtml: rawFooterHtml } = SaveAutoRequest._extractPf1Content(html);
+    let footerHtml = rawFooterHtml;
 
-    const rawLabel = pf1?.config?.savingThrows?.[saveType] ?? saveType;
-    const saveName = game.i18n.format("RR.SaveName", { name: game.i18n.localize(rawLabel) });
+    // For skill/ability checks, PF1 renders no native "save" button (there is no
+    // system save), so synthesize an equivalent button in the same footer slot —
+    // a standalone check roll for the clicker's selected token, mirroring the
+    // native "Fortitude DC 12" button that saving throws get for free.
+    if (descriptor.type !== "save") {
+      footerHtml = SaveAutoRequest._appendCheckButton(footerHtml, descriptor, dc);
+    }
 
     const flagData = {
       mode: "targeted",
       isSaveRequest: true,
-      request: { type: "save", key: saveType, name: saveName },
+      request: { type: descriptor.type, key: descriptor.key, name: descriptor.name },
       dc: dc !== null ? Number(dc) : null,
       showDC: dc !== null,
       showResults: true,
@@ -131,5 +226,33 @@ export class SaveAutoRequest {
     const footerHtml = afterContent.map(el => el.outerHTML).join("") + `</div>`;
 
     return { headerHtml, footerHtml };
+  }
+
+  // ----------------------------------------------------------
+  // Build the standalone check button (mirrors PF1's native save button)
+  // and splice it into the preserved footer, inside the .pf1.chat-card
+  // wrapper so it inherits PF1's card-button styling. Bound at render time
+  // by RollRequestChat (see `.rr-check-button`). Deliberately carries no
+  // `data-action` so PF1's own button binder doesn't also fire on it.
+  // ----------------------------------------------------------
+
+  static _appendCheckButton(footerHtml, descriptor, dc) {
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+    const label = dc != null
+      ? game.i18n.format("RR.Card.CheckButton", { name: descriptor.name, dc })
+      : descriptor.name;
+
+    const group =
+      `<div class="card-buttons flexcol"><div class="card-button-group flexcol">` +
+      `<button type="button" class="rr-check-button" data-check-type="${esc(descriptor.type)}" ` +
+      `data-check-key="${esc(descriptor.key)}" data-dc="${dc != null ? dc : ""}">${esc(label)}</button>` +
+      `</div></div>`;
+
+    const CLOSE = "</div>";
+    return footerHtml.endsWith(CLOSE)
+      ? footerHtml.slice(0, -CLOSE.length) + group + CLOSE
+      : footerHtml + group;
   }
 }
