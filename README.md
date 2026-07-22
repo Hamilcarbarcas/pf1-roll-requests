@@ -20,7 +20,7 @@ A GM-only dialog accessed via the dice button in the token controls toolbar, or 
 The dialog lets you select:
 
 - **Check type** — Ability checks, saving throws, skill checks, or raw dice
-- **Mode** — Single-check, multi-check, or selection-check (prompt specific actors)
+- **Mode** — Single-check, multi-check, selection-check (prompt specific actors), or DM check (auto-roll for your selected NPCs)
 - **DC** — Optional; can be shown or hidden from players
 - **Roll mode** — Public, GM-only, or blind roll.
 - **Result visibility** — Whether pass/fail indicators are shown to players
@@ -45,6 +45,8 @@ To hide a player-owned NPC you don't want prompted, **right-click its row** and 
 **Single-check mode:** One player rolls the primary check. Other players can contribute Aid Another rolls (DC 10) that add +2 each to the primary roll's total, if enabled. Results update in real time.
 
 **Multi-check mode:** Any number of players can each roll independently. Each result is appended to the card as it comes in.
+
+**DM check mode:** For quickly resolving a check across a group of NPCs — e.g. having a room full of guards roll Perception. Select the NPC tokens on the canvas, pick the check, and click **Request Roll**: the module immediately rolls for every selected NPC (no dialogs, no player interaction) and posts a single card listing each result. Each selected token rolls independently, so unlinked duplicates of the same actor each get their own line. Aid Another is disabled, and the roll mode automatically switches to **Private GM Roll** when you select this mode (your previous roll mode is restored if you switch to another mode). You can still override the roll mode afterward — for example set it to Public if you want the party to see the results. When [pf1-token-randomizer](https://github.com/Hamilcarbarcas/pf1-token-randomizer) is active, NPC names on the card respect its obscured-name setting, so players see the obscured name (and the GM/observers see the real one).
 
 Every request card tags its title with the check mode — `[Single Check]`, `[Multi-Check]`, or `[Selected Check]` — so the kind of check is clear at a glance. (Auto-generated saving-throw cards are left untagged.)
 

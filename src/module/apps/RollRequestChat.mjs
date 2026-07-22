@@ -183,7 +183,15 @@ export class RollRequestChat {
         break;
     }
 
-    return ChatMessage.create(chatData);
+    const message = await ChatMessage.create(chatData);
+
+    // DM Check: immediately roll for every selected NPC, GM-side and dialog-free.
+    // Reuses the targeted bulk-roll path (skipDialog, no player interaction).
+    if (requestData.isDMCheck && game.user.isGM) {
+      await RollRequestChat._bulkRollTargeted(message);
+    }
+
+    return message;
   }
 
   // ----------------------------------------------------------
@@ -216,6 +224,9 @@ export class RollRequestChat {
 
     // Re-render results from flag data (await so DOM is populated before cleanup/binding)
     await RollRequestChat._renderExistingResults(message, card, flags);
+
+    // Obscure NPC token names for non-observers when pf1-token-randomizer is active.
+    RollRequestChat._applyNameObscuring(card, flags);
 
     // Strip PF1's "Success/Failure" + DC display from freshly-rendered roll details —
     // our card handles pass/fail display separately, and PF1 may show the wrong DC
@@ -919,11 +930,43 @@ export class RollRequestChat {
   }
 
   // ----------------------------------------------------------
+  // Obscure NPC token names on targeted cards via pf1-token-randomizer.
+  // No-op when the module is absent/inactive or its API is missing. Runs
+  // per-viewer in the render hook and delegates the whole policy to the
+  // randomizer's permission-gated `getDisplayName` — so the GM and any observer
+  // keep the real name, and only non-observers (with an obscured name set) see
+  // the substituted one. Covers DM checks and any other targeted card that a
+  // player can see.
+  // ----------------------------------------------------------
+
+  static _applyNameObscuring(card, flags) {
+    if (flags.mode !== "targeted") return;
+    const tr = game.modules.get("pf1-token-randomizer");
+    const api = tr?.active ? tr.api : null;
+    if (!api?.getDisplayName) return;
+
+    for (const block of card.querySelectorAll(".arr-targeted-block")) {
+      const entry = flags.targetedActors?.find(t => t.id === block.dataset.actorId);
+      if (!entry?.tokenUUID) continue;
+      const tokenDoc = fromUuidSync(entry.tokenUUID);
+      if (!tokenDoc) continue;
+      const display = api.getDisplayName(tokenDoc, game.user) || entry.name;
+      if (display === entry.name) continue;
+      const nameEl = block.querySelector(".arr-actor-name");
+      if (nameEl) nameEl.textContent = display;
+      const img = block.querySelector(".arr-actor-img");
+      if (img) img.alt = display;
+    }
+  }
+
+  // ----------------------------------------------------------
   // Get the check-kind label shown in the card title
   // (e.g. "Single Check", "Multi-Check", "Selected Check").
   // ----------------------------------------------------------
 
   static _getCheckKindLabel(flags) {
+    // DM checks render as "targeted" cards but get their own tag.
+    if (flags.isDMCheck) return game.i18n.localize("RR.Card.KindDM");
     // Auto-generated save-request cards are treated as their own thing (they also
     // skip the aggregate line), so we don't tag them with a check-kind label.
     if (flags.isSaveRequest) return "";

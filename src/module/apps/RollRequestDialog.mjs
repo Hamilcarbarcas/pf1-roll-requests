@@ -24,6 +24,9 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     this.includeAid = s?.includeAid ?? true;
     this.selectedRequest = s?.selectedRequest ?? null;
     this.targetedActors = s?.targetedActors ?? [];
+    // Roll mode remembered when DM Check forces Private GM Roll, restored when
+    // the GM switches back to any other check mode within this dialog session.
+    this._rollModeBeforeDM = null;
   }
 
   _saveSettings() {
@@ -385,6 +388,12 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     return this.rollMode; // blindroll
   }
 
+  /** Reflect the current rollMode/showResults onto the roll-mode <select>. */
+  _applyRollModeToSelect() {
+    const sel = this.element?.querySelector("#arr-rollmode");
+    if (sel) sel.value = this._getRollModeOption();
+  }
+
   // ---- After Render — bind form listeners ----
 
   async _onRender(context, options) {
@@ -400,11 +409,29 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       }
     };
 
-    // Check mode radios — also toggle actor selection visibility
+    // Check mode radios — toggle actor selection visibility, and handle the
+    // DM Check mode's forced Private GM Roll (remembering the prior roll mode so
+    // switching to any other check mode restores it).
     el.querySelectorAll('input[name="checkMode"]').forEach(radio => {
       radio.addEventListener("change", (e) => {
-        this.checkMode = e.currentTarget.value;
+        const prev = this.checkMode;
+        const next = e.currentTarget.value;
+        this.checkMode = next;
+
+        if (next === "dmcheck" && prev !== "dmcheck") {
+          this._rollModeBeforeDM = { rollMode: this.rollMode, showResults: this.showResults };
+          this.rollMode = "gmroll";
+          this.showResults = true;
+          this._applyRollModeToSelect();
+        } else if (prev === "dmcheck" && next !== "dmcheck" && this._rollModeBeforeDM) {
+          this.rollMode = this._rollModeBeforeDM.rollMode;
+          this.showResults = this._rollModeBeforeDM.showResults;
+          this._rollModeBeforeDM = null;
+          this._applyRollModeToSelect();
+        }
+
         syncActorSelectionVisibility();
+        this._syncAidCheckbox();
       });
     });
 
@@ -454,7 +481,9 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   _syncAidCheckbox() {
     const checkbox = this.element?.querySelector("#arr-include-aid");
     if (!checkbox) return;
-    const disableAid = this.selectedRequest?.type === "save" || this.selectedRequest?.type === "dice";
+    const disableAid = this.checkMode === "dmcheck"
+      || this.selectedRequest?.type === "save"
+      || this.selectedRequest?.type === "dice";
     checkbox.disabled = disableAid;
     const group = checkbox.closest(".form-group");
     if (group) group.style.opacity = disableAid ? "0.4" : "";
@@ -481,8 +510,30 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       return;
     }
 
-    // Force includeAid off for dice-type and save-type requests
-    const includeAid = (this.selectedRequest.type === "dice" || this.selectedRequest.type === "save") ? false : this.includeAid;
+    const isDMCheck = this.checkMode === "dmcheck";
+
+    // DM Check: gather the GM's currently-selected NPC tokens. Keyed by *token*
+    // id (not actor id) so multiple unlinked copies of one actor each get their
+    // own row/result; the actor is resolved at roll time via tokenUUID.
+    let dmTargets;
+    if (isDMCheck) {
+      const npcTokens = (canvas.tokens?.controlled ?? []).filter(t => t.actor?.type === "npc");
+      if (npcTokens.length === 0) {
+        ui.notifications.warn(game.i18n.localize("RR.Notif.SelectNPCTokens"));
+        return;
+      }
+      dmTargets = npcTokens.map(t => ({
+        id: t.id,
+        name: t.name ?? t.actor.name,
+        img: t.actor.img,
+        tokenUUID: t.document.uuid,
+      }));
+    }
+
+    // Force includeAid off for DM checks, and for dice-type and save-type requests
+    const includeAid = isDMCheck
+      ? false
+      : (this.selectedRequest.type === "dice" || this.selectedRequest.type === "save") ? false : this.includeAid;
 
     // Selection Check requires at least one actor to be chosen
     if (this.checkMode === "selection" && this.targetedActors.length === 0) {
@@ -490,7 +541,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       return;
     }
 
-    const isTargeted = this.checkMode === "selection" && this.selectedRequest.type !== "dice";
+    // Both Selection and DM checks render as per-actor "targeted" cards.
+    const isTargeted = isDMCheck || (this.checkMode === "selection" && this.selectedRequest.type !== "dice");
     const mode = isTargeted ? "targeted" : this.checkMode === "selection" ? "single" : this.checkMode;
 
     const requestData = {
@@ -501,12 +553,13 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       rollMode: this.rollMode,
       flavor: this.flavor,
       includeAid,
+      isDMCheck,
       request: this.selectedRequest,
       rolledActors: {},
       aidResults: {},
       aidTotal: 0,
       // Targeted mode data
-      targetedActors: isTargeted ? this.targetedActors : [],
+      targetedActors: isDMCheck ? dmTargets : isTargeted ? this.targetedActors : [],
       actorResults: {},
       actorAidResults: {},
       usedActorIds: [],
