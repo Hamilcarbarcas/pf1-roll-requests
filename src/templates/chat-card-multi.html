@@ -4,7 +4,7 @@
      ============================================================ -->
 <div class="pf1-roll-requests chat-card arr-card" data-mode="multi">
     <header class="arr-card-header flexrow">
-        <h3 class="arr-card-title">{{{name}}}</h3>
+        <h3 class="arr-card-title">{{{name}}}{{#if checkKindLabel}} <span class="arr-card-kind">{{checkKindLabel}}</span>{{/if}}</h3>
         {{#if dc}}
         <h3 class="arr-dc-display {{#unless showDC}}gm-only{{/unless}}">{{localize "RR.Card.DCLabel"}} {{dc}}</h3>
         {{/if}}

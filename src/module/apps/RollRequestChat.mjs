@@ -156,6 +156,7 @@ export class RollRequestChat {
       modeName,
       targetedActors: requestData.targetedActors ?? [],
       isSaveRequest: requestData.isSaveRequest ?? false,
+      checkKindLabel: RollRequestChat._getCheckKindLabel(requestData),
       summaryHtml: RollRequestChat._renderSummary(requestData),
       aggregateHtml: RollRequestChat._renderAggregate(requestData),
     };
@@ -918,6 +919,23 @@ export class RollRequestChat {
   }
 
   // ----------------------------------------------------------
+  // Get the check-kind label shown in the card title
+  // (e.g. "Single Check", "Multi-Check", "Selected Check").
+  // ----------------------------------------------------------
+
+  static _getCheckKindLabel(flags) {
+    // Auto-generated save-request cards are treated as their own thing (they also
+    // skip the aggregate line), so we don't tag them with a check-kind label.
+    if (flags.isSaveRequest) return "";
+    switch (flags.mode) {
+      case "single":   return game.i18n.localize("RR.Card.KindSingle");
+      case "multi":    return game.i18n.localize("RR.Card.KindMulti");
+      case "targeted": return game.i18n.localize("RR.Card.KindSelected");
+      default:         return "";
+    }
+  }
+
+  // ----------------------------------------------------------
   // Get display name for a roll mode + results visibility combo
   // ----------------------------------------------------------
 
@@ -1200,6 +1218,7 @@ export class RollRequestChat {
       modeName,
       targetedActors: flags.targetedActors ?? [],
       isSaveRequest: flags.isSaveRequest ?? false,
+      checkKindLabel: RollRequestChat._getCheckKindLabel(flags),
       summaryHtml: RollRequestChat._renderSummary(flags),
       aggregateHtml: RollRequestChat._renderAggregate(flags),
     };

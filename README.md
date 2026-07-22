@@ -46,6 +46,8 @@ To hide a player-owned NPC you don't want prompted, **right-click its row** and 
 
 **Multi-check mode:** Any number of players can each roll independently. Each result is appended to the card as it comes in.
 
+Every request card tags its title with the check mode — `[Single Check]`, `[Multi-Check]`, or `[Selected Check]` — so the kind of check is clear at a glance. (Auto-generated saving-throw cards are left untagged.)
+
 The GM always sees the DC and pass/fail results. Players see them only if the GM enabled visibility for that request.
 
 **Result aggregate:** On multi-check and selection-check cards, an optional line below the title/DC can show the running **highest** or **average** of the roll totals, updating live as results arrive (it appears once more than one result is in). Choose *None* (default), *Average result*, or *Highest result* under **Settings → Module Settings → Multi-Check Result Aggregate**. The average is rounded to the nearest whole number, and the line follows the same visibility as the totals themselves — the GM always sees it, and players see it unless the card hides totals (obscured/blind rolls).

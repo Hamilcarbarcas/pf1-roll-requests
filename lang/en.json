@@ -113,6 +113,9 @@
   "RR.Mode.BlindRollHidden": "Blind Roll, Results Hidden",
 
   "RR.Card.DCLabel": "DC:",
+  "RR.Card.KindSingle": "Single Check",
+  "RR.Card.KindMulti": "Multi-Check",
+  "RR.Card.KindSelected": "Selected Check",
   "RR.Card.AggregateHighest": "Highest:",
   "RR.Card.AggregateAverage": "Average:",
   "RR.Card.RollCheck": "Roll Check",

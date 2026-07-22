@@ -153,6 +153,19 @@
   padding-bottom: 0;
 }
 
+/* Check-kind tag ("Single Check" / "Multi-Check" / "Selected Check") shown
+   inline after the title, reset to the UI font so it reads as a small tag. */
+.arr-card-header .arr-card-title .arr-card-kind {
+  font-family: var(--font-primary, "Signika", sans-serif);
+  font-size: 11px;
+  font-weight: 400;
+  color: #7a7971;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.arr-card-header .arr-card-title .arr-card-kind::before { content: "["; }
+.arr-card-header .arr-card-title .arr-card-kind::after { content: "]"; }
+
 .arr-card-header .arr-dc-display {
   flex: 0 0 auto;
   margin: 0;
