@@ -728,22 +728,49 @@ export class RollRequestChat {
     if (request.type === "skill" && !currentFlags.isSaveRequest) {
       const sklInfo = actor.getSkillInfo?.(request.key);
       if (sklInfo && sklInfo.rt && sklInfo.rank === 0) {
-        ui.notifications.warn(
-          game.i18n.format("RR.Notif.TrainedOnly", { name: actor.name, check: request.name })
-        );
-        return;
+        // RAW: a Knowledge check of DC 10 or lower can be attempted untrained;
+        // every other trained-only skill (and Knowledge above DC 10) still gates.
+        const knowledgeUntrainedOk =
+          RollRequestChat._isKnowledgeSkill(request.key) && dc != null && dc <= 10;
+        if (!knowledgeUntrainedOk) {
+          ui.notifications.warn(
+            game.i18n.format("RR.Notif.TrainedOnly", { name: actor.name, check: request.name })
+          );
+          return;
+        }
       }
     }
 
     // --- Validation: Natural-20 feasibility check ---
     if (dc != null && request.type !== "dice" && request.type !== "save" && !currentFlags.isSaveRequest) {
-      const maxPossible = RollRequestChat._getMaxRoll(actor, request);
-      if (maxPossible !== null && maxPossible < dc) {
-        const msg = (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid")
-          ? game.i18n.format("RR.Notif.CannotAidImpossible", { name: actor.name })
-          : game.i18n.format("RR.Notif.CannotSucceed", { name: actor.name });
-        ui.notifications.warn(msg);
-        return;
+      const isAidRoll = rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid";
+
+      // "Allow un-passable checks" opens the gate for everyone (primary rollers
+      // and aiders alike); "Ignore aid requirement" additionally frees aiders on
+      // its own, for when the primary check should still be gated.
+      const bypass = currentFlags.allowUnpassable
+        || (isAidRoll && currentFlags.ignoreAidRequirement);
+
+      if (!bypass) {
+        let maxPossible = RollRequestChat._getMaxRoll(actor, request);
+        if (maxPossible !== null) {
+          // A primary roller counts the aid already banked toward this check, so
+          // someone who can't reach the DC alone but can *with* aid may still roll.
+          // (Mirrors the aid bonus pre-populated into their actual roll below.)
+          // Aiders don't benefit — aid doesn't stack onto an aider's own feasibility.
+          if (!isAidRoll && currentFlags.includeAid) {
+            maxPossible += rollType === "targeted"
+              ? RollRequestChat._calculateAidTotalForActor(currentFlags, targetActorId)
+              : (currentFlags.aidTotal || 0);
+          }
+          if (maxPossible < dc) {
+            const msg = isAidRoll
+              ? game.i18n.format("RR.Notif.CannotAidImpossible", { name: actor.name })
+              : game.i18n.format("RR.Notif.CannotSucceed", { name: actor.name });
+            ui.notifications.warn(msg);
+            return;
+          }
+        }
       }
     }
 
@@ -905,6 +932,17 @@ export class RollRequestChat {
     if (msg instanceof Roll) return msg;
 
     return null;
+  }
+
+  // ----------------------------------------------------------
+  // Whether a skill key is a Knowledge skill. Every Knowledge skill key —
+  // system (kar, kdu, ken, …) and astora's custom kps — begins with "k", and no
+  // other PF1 skill does, so the prefix is a reliable test. Used for the RAW
+  // "Knowledge DC 10 or lower may be attempted untrained" exception.
+  // ----------------------------------------------------------
+
+  static _isKnowledgeSkill(key) {
+    return typeof key === "string" && key.startsWith("k");
   }
 
   // ----------------------------------------------------------

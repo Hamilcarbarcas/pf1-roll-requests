@@ -48,6 +48,24 @@
   margin: 0;
 }
 
+/* Indented sub-option checkbox sitting beneath its parent control. */
+.arr-suboption {
+  display: flex;
+  /* Force a full-width break so it sits on its own line beneath the parent
+     control within the wrapping flex .form-group. */
+  flex: 0 0 100%;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0 14px;
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.arr-suboption input[type="checkbox"] {
+  margin: 0;
+}
+
 /* ---- Request Option Grid ---- */
 
 .arr-options-panel {

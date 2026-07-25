@@ -22,6 +22,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     this.rollMode = s?.rollMode ?? "roll";
     this.flavor = s?.flavor ?? "";
     this.includeAid = s?.includeAid ?? true;
+    this.ignoreAidRequirement = s?.ignoreAidRequirement ?? false;
+    this.allowUnpassable = s?.allowUnpassable ?? false;
     this.selectedRequest = s?.selectedRequest ?? null;
     this.targetedActors = s?.targetedActors ?? [];
     // Roll mode remembered when DM Check forces Private GM Roll, restored when
@@ -38,6 +40,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       rollMode: this.rollMode,
       flavor: this.flavor,
       includeAid: this.includeAid,
+      ignoreAidRequirement: this.ignoreAidRequirement,
+      allowUnpassable: this.allowUnpassable,
       selectedRequest: this.selectedRequest,
       targetedActors: [...this.targetedActors],
     };
@@ -144,6 +148,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       rollModeOption: this._getRollModeOption(),
       flavor: this.flavor,
       includeAid: this.includeAid,
+      ignoreAidRequirement: this.ignoreAidRequirement,
+      allowUnpassable: this.allowUnpassable,
       optionGroups,
       selectedRequest: this.selectedRequest,
       promptActors,
@@ -338,6 +344,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       rollMode: cfg.rollMode,
       flavor: "",
       includeAid: cfg.includeAid,
+      ignoreAidRequirement: cfg.ignoreAidRequirement ?? false,
+      allowUnpassable: cfg.allowUnpassable ?? false,
       request: { ...action.request, name: game.i18n.localize(action.request.name) },
       rolledActors: {},
       aidResults: {},
@@ -449,7 +457,12 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       }
     });
     el.querySelector("#arr-flavor")?.addEventListener("blur", (e) => { this.flavor = e.currentTarget.value; });
-    el.querySelector("#arr-include-aid")?.addEventListener("change", (e) => { this.includeAid = e.currentTarget.checked; });
+    el.querySelector("#arr-allow-unpassable")?.addEventListener("change", (e) => { this.allowUnpassable = e.currentTarget.checked; });
+    el.querySelector("#arr-include-aid")?.addEventListener("change", (e) => {
+      this.includeAid = e.currentTarget.checked;
+      this._syncAidCheckbox();
+    });
+    el.querySelector("#arr-ignore-aid-req")?.addEventListener("change", (e) => { this.ignoreAidRequirement = e.currentTarget.checked; });
 
     // Actor checkboxes
     el.querySelectorAll(".arr-actor-checkbox").forEach(cb => {
@@ -487,6 +500,16 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     checkbox.disabled = disableAid;
     const group = checkbox.closest(".form-group");
     if (group) group.style.opacity = disableAid ? "0.4" : "";
+
+    // The "Ignore aid requirement" sub-option is only meaningful while aid is
+    // both available and enabled; grey it out (but keep its state) otherwise.
+    const subCheckbox = this.element?.querySelector("#arr-ignore-aid-req");
+    if (subCheckbox) {
+      const disableSub = disableAid || !checkbox.checked;
+      subCheckbox.disabled = disableSub;
+      const subGroup = subCheckbox.closest(".form-group");
+      if (subGroup) subGroup.style.opacity = disableSub ? "0.4" : "";
+    }
   }
 
   // ---- Actions ----
@@ -553,6 +576,9 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       rollMode: this.rollMode,
       flavor: this.flavor,
       includeAid,
+      // "Ignore aid requirement" only matters when aid is actually offered.
+      ignoreAidRequirement: includeAid ? this.ignoreAidRequirement : false,
+      allowUnpassable: this.allowUnpassable,
       isDMCheck,
       request: this.selectedRequest,
       rolledActors: {},

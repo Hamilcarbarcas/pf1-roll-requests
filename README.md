@@ -22,9 +22,11 @@ The dialog lets you select:
 - **Check type** — Ability checks, saving throws, skill checks, or raw dice
 - **Mode** — Single-check, multi-check, selection-check (prompt specific actors), or DM check (auto-roll for your selected NPCs)
 - **DC** — Optional; can be shown or hidden from players
+  - **Allow un-passable checks** — By default an actor who cannot reach the DC even on a natural 20 is blocked from rolling. Tick this to let them roll anyway (this also lifts the aid requirement below). Trained-only skills without ranks are still blocked (see below).
 - **Roll mode** — Public, GM-only, or blind roll.
 - **Result visibility** — Whether pass/fail indicators are shown to players
 - **Aid Another** — Whether other players can aid (single-check mode only; forced off for saves and dice)
+  - **Ignore aid requirement** — By default an aider must themselves be able to succeed on the check to aid. Tick this to let anyone attempt Aid Another regardless (also implied by *Allow un-passable checks*).
 - **Flavor text** — Optional label shown on the chat card
 
 #### Prompt Actors (Selection Check)
@@ -42,7 +44,9 @@ To hide a player-owned NPC you don't want prompted, **right-click its row** and 
 
 ![Chat Message Filled](assets/request-roll-chat-message-completed.png)
 
-**Single-check mode:** One player rolls the primary check. Other players can contribute Aid Another rolls (DC 10) that add +2 each to the primary roll's total, if enabled. Results update in real time.
+**Single-check mode:** One player rolls the primary check. Other players can contribute Aid Another rolls (DC 10) that add +2 each to the primary roll's total, if enabled. Results update in real time. Aid already banked toward the check counts toward the feasibility gate below, so an actor who couldn't reach the DC alone but can *with* the accumulated aid is allowed to roll.
+
+**Feasibility & training gates:** When a DC is set, an actor who cannot reach it even on a natural 20 is blocked from rolling (override per-request with **Allow un-passable checks**). Independently, a trained-only skill cannot be rolled without ranks — with one rules-as-written exception: a **Knowledge** check of **DC 10 or lower** may be attempted untrained. The training gate is never lifted by *Allow un-passable checks*.
 
 **Multi-check mode:** Any number of players can each roll independently. Each result is appended to the card as it comes in.
 

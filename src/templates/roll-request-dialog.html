@@ -31,6 +31,10 @@
                     <label style="flex: 0 0 auto; margin: 0;">{{localize "RR.Dialog.Show"}}</label>
                     <input type="checkbox" id="arr-show-dc" {{checked showDC}} style="flex: 0 0 auto;" />
                 </div>
+                <label class="arr-suboption flexrow" title="{{localize "RR.Dialog.AllowUnpassableHint"}}">
+                    <input type="checkbox" id="arr-allow-unpassable" {{checked allowUnpassable}} style="flex: 0 0 auto;" />
+                    <span>{{localize "RR.Dialog.AllowUnpassable"}}</span>
+                </label>
             </div>
 
             <!-- Roll Mode -->
@@ -55,6 +59,10 @@
             <div class="form-group">
                 <label style="flex: 0 0 auto;">{{localize "RR.Dialog.AidAnother"}}</label>
                 <input type="checkbox" id="arr-include-aid" {{checked includeAid}} style="flex: 0 0 auto;" />
+                <label class="arr-suboption flexrow" title="{{localize "RR.Dialog.IgnoreAidRequirementHint"}}">
+                    <input type="checkbox" id="arr-ignore-aid-req" {{checked ignoreAidRequirement}} style="flex: 0 0 auto;" />
+                    <span>{{localize "RR.Dialog.IgnoreAidRequirement"}}</span>
+                </label>
             </div>
 
             <!-- Prompt Actors (selection mode only) -->
