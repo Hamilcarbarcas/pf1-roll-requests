@@ -150,6 +150,27 @@ game.pf1RollRequests.createRequest({
 - The summary slot is present in all card types (single, multi-check, and targeted).
 - `game.pf1RollRequests.unregisterSummary(key)` removes a formatter.
 
+## Excluding targets from an auto-save request
+
+An action's chat card lists the tokens it was used against in `message.system.targets`, and the [auto-save request](README.md#auto-save-requests) turns that list into the card's roll rows. Sometimes a token belongs in that list — other modules read it as "who this action was used against", for instance Little Helper's apply-damage sanity check — but should *not* be asked to roll the check.
+
+Set `excludeTargets` in the module's flag scope on the message, and those uuids are skipped when the card is built:
+
+```js
+// At message-creation time (e.g. from an ActionUse pipeline):
+chatData["flags.pf1-roll-requests.excludeTargets"] = [token.document.uuid];
+
+// Or on an existing message:
+await message.setFlag("pf1-roll-requests", "excludeTargets", [token.document.uuid]);
+```
+
+- Values are **token uuids**, matching the entries in `message.system.targets`.
+- Applies to the automatic conversion only — it does not affect requests you create yourself with `createRequest`, where you pass the actor list directly.
+- If every target is excluded, no request card is created at all.
+- The module never asks *why* a target was excluded; the caller decides.
+
+The motivating case is a thrown splash weapon: the token taking the direct hit is a genuine target of the action, but only the creatures caught in the burst roll the Reflex save.
+
 ## Hook
 
 `pf1RollRequests.rollComplete` fires whenever a roll is completed on a request card, passing the message ID, roll type, result data, and updated flags.

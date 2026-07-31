@@ -24,7 +24,7 @@ export class SaveAutoRequest {
 
     if (!game.settings.get(MODULE_ID, "auto-save-request")) return;
 
-    const targetUUIDs = message.system?.targets ?? [];
+    const targetUUIDs = SaveAutoRequest.requestTargets(message);
     if (!targetUUIDs.length) return;
 
     // Only the GM initializes (prevents race conditions on multi-client render)
@@ -42,6 +42,29 @@ export class SaveAutoRequest {
     SaveAutoRequest._initialize(message, html, descriptor).finally(() => {
       SaveAutoRequest._pendingInit.delete(message.id);
     });
+  }
+
+  // ----------------------------------------------------------
+  // The tokens that should actually be asked to roll: the action's targets,
+  // minus any the posting module opted out via
+  //   flags["pf1-roll-requests"].excludeTargets = [tokenUuid, ...]
+  //
+  // `message.system.targets` means "tokens this action was used against", and
+  // other modules read it that way (Little Helper's apply-damage sanity check,
+  // for one), so a module that needs a target left off the *check* should say
+  // so here rather than lie about the target list. Example: a splash weapon,
+  // where the token taking the direct hit is a genuine target of the action but
+  // is not among those rolling the burst's Reflex save.
+  //
+  // Deliberately generic — nothing here knows why a target was excluded.
+  // ----------------------------------------------------------
+
+  static requestTargets(message) {
+    const all = message.system?.targets ?? [];
+    const excluded = message.flags?.[MODULE_ID]?.excludeTargets;
+    if (!Array.isArray(excluded) || !excluded.length) return all;
+    const skip = new Set(excluded);
+    return all.filter((uuid) => !skip.has(uuid));
   }
 
   // ----------------------------------------------------------
@@ -136,7 +159,7 @@ export class SaveAutoRequest {
     const dc = descriptor.type === "save"
       ? (descriptor.dc != null ? Number(descriptor.dc) : null)
       : SaveAutoRequest._resolveCheckDC(descriptor);
-    const targetUUIDs = message.system.targets;
+    const targetUUIDs = SaveAutoRequest.requestTargets(message);
 
     // Resolve token UUIDs to targetedActors entries.
     // We use the full UUID as id so results are unique per token

@@ -68,6 +68,8 @@ When a PF1e attack action that includes a saving throw is posted to chat, the mo
 
 This feature is enabled by default and can be toggled in **Settings → Module Settings → Auto-Request Saving Throws**.
 
+Another module can leave a specific target off the generated card while keeping it in the action's target list — see [`excludeTargets`](api.md#excluding-targets-from-an-auto-save-request) in the API reference.
+
 #### Skill & Ability Check Actions
 
 The same auto-request pipeline can be driven by a **skill check** or **ability check** instead of a saving throw. On any item action's **Saving Throw** tab, the **Type** dropdown now includes **Skill Check** and **Ability Check** alongside Fortitude / Reflex / Will:
