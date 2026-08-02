@@ -102,6 +102,9 @@ export class RollRequestChat {
     if (flags.mode !== "multi" && flags.mode !== "targeted") return "";
     // Auto-generated save-request cards aren't "selection checks"; keep them uncluttered.
     if (flags.isSaveRequest) return "";
+    // A result table shows labels rather than totals, so a highest/average of the
+    // underlying numbers would print a value that appears nowhere on the card.
+    if (Array.isArray(flags.resultTable) && flags.resultTable.length) return "";
 
     const results = flags.mode === "multi"
       ? Object.values(flags.rolledActors || {})
@@ -122,6 +125,152 @@ export class RollRequestChat {
 
     const gmOnly = flags.rollMode === "publicblind" ? " gm-only" : "";
     return `<div class="arr-aggregate${gmOnly}"><strong>${label}</strong> ${value}</div>`;
+  }
+
+  // ----------------------------------------------------------
+  // Custom result tables (the API's resultTable / showTable options)
+  //
+  // A result table maps a roll's numeric total onto a label, so a card can ask
+  // for "2d4-2" and display "Banana" instead of "2". Rows are *thresholds*: a
+  // row covers everything from its `min` up to the next row's `min - 1`, and the
+  // lowest row may omit `min` entirely (open-ended below). Expressed that way a
+  // table cannot contain a gap, which explicit {min, max} ranges make easy to
+  // write by accident.
+  // ----------------------------------------------------------
+
+  /**
+   * Index of the table row a total falls into, or -1 for no match.
+   *
+   * Order-independent (the winner is the qualifying row with the highest `min`),
+   * so a caller-supplied table that skipped normalization still resolves right.
+   *
+   * @param {object[]} resultTable
+   * @param {number} total
+   * @returns {number}
+   */
+  static _tableRowIndex(resultTable, total) {
+    if (!Array.isArray(resultTable) || !resultTable.length) return -1;
+    if (typeof total !== "number" || !Number.isFinite(total)) return -1;
+
+    let index = -1;
+    let bestMin = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < resultTable.length; i++) {
+      const min = Number.isFinite(resultTable[i]?.min)
+        ? resultTable[i].min
+        : Number.NEGATIVE_INFINITY;
+      if (total >= min && (index === -1 || min >= bestMin)) {
+        index = i;
+        bestMin = min;
+      }
+    }
+    return index;
+  }
+
+  /**
+   * The label a total maps to on a result table, or null when there is no table
+   * or the total falls outside every row.
+   *
+   * @param {object[]|null} resultTable
+   * @param {number} total
+   * @returns {string|null}
+   */
+  static _resolveTableLabel(resultTable, total) {
+    const i = RollRequestChat._tableRowIndex(resultTable, total);
+    if (i === -1) return null;
+    const label = resultTable[i]?.label;
+    return (label == null || label === "") ? null : String(label);
+  }
+
+  /**
+   * Render one row's range. `low`/`high` are null when that end is open. When
+   * `bounds` ({min, max}) is supplied the open ends are clamped to the formula's
+   * own reachable range, turning "≤0" into "0" and "5+" into "5–6" for 2d4-2.
+   *
+   * A row the formula can never reach would clamp to an inverted range; those
+   * fall back to their unclamped open-ended form rather than printing nonsense.
+   *
+   * @param {number|null} low
+   * @param {number|null} high
+   * @param {{min: number, max: number}|null} bounds
+   * @returns {string}
+   */
+  static _formatTableRange(low, high, bounds) {
+    let lo = low;
+    let hi = high;
+
+    if (bounds) {
+      if (lo == null && Number.isFinite(bounds.min)) lo = bounds.min;
+      if (hi == null && Number.isFinite(bounds.max)) hi = bounds.max;
+      if (lo != null && hi != null && lo > hi) { lo = low; hi = high; }
+    }
+
+    if (lo == null && hi == null) return game.i18n.localize("RR.Table.Any");
+    if (lo == null) return `≤${hi}`;
+    if (hi == null) return `${lo}+`;
+    if (lo === hi) return `${lo}`;
+    return `${lo}–${hi}`;
+  }
+
+  /**
+   * Build the result-table slot: every row of the card's table with its derived
+   * range, plus the portraits of anyone whose roll landed on that row. Like the
+   * summary and aggregate slots this is recomputed from flags on every roll, so
+   * the highlight keeps itself current with no extra call from the caller.
+   *
+   * The full table always renders — a formula that can only reach part of it
+   * still shows every row, which is the point of writing the table out. Set
+   * `clampTable` to trim the open ends to what the formula can actually roll.
+   *
+   * On publicblind cards the hit markers are `.gm-only`: the table itself stays
+   * visible to players, but revealing which row was hit would hand them the
+   * total the card is deliberately showing them as "?".
+   *
+   * @param {object} flags - The card's current flag state.
+   * @returns {string}
+   */
+  static _renderResultTable(flags) {
+    const table = flags.resultTable;
+    if (!flags.showTable || !Array.isArray(table) || !table.length) return "";
+
+    const bounds = flags.clampTable ? (flags.tableBounds ?? null) : null;
+    const hideHitsFromPlayers = flags.rollMode === "publicblind";
+
+    // Bucket every result posted so far onto the row it landed on.
+    const results = flags.mode === "targeted"
+      ? Object.values(flags.actorResults || {})
+      : Object.values(flags.rolledActors || {});
+    const hits = new Map();
+    for (const entry of results) {
+      const i = RollRequestChat._tableRowIndex(table, entry?.total);
+      if (i === -1) continue;
+      if (!hits.has(i)) hits.set(i, []);
+      hits.get(i).push(entry);
+    }
+
+    const rows = table.map((row, i) => {
+      const low = Number.isFinite(row?.min) ? row.min : null;
+      const nextMin = Number.isFinite(table[i + 1]?.min) ? table[i + 1].min : null;
+      const high = nextMin != null ? nextMin - 1 : null;
+      const range = RollRequestChat._formatTableRange(low, high, bounds);
+
+      const entries = hits.get(i) ?? [];
+      let hitHtml = "";
+      if (entries.length) {
+        const portraits = entries.map((e) => {
+          const name = foundry.utils.escapeHTML(String(e.actorName ?? ""));
+          return `<img class="arr-table-portrait" src="${e.actorImg}" alt="${name}" title="${name}" />`;
+        }).join("");
+        hitHtml = `<span class="arr-table-hit${hideHitsFromPlayers ? " gm-only" : ""}">${portraits}</span>`;
+      }
+
+      return `<tr class="arr-table-row">`
+        + `<td class="arr-table-range">${range}</td>`
+        + `<td class="arr-table-label">${row?.label ?? ""}</td>`
+        + `<td class="arr-table-hits">${hitHtml}</td>`
+        + `</tr>`;
+    }).join("");
+
+    return `<table class="arr-result-table"><tbody>${rows}</tbody></table>`;
   }
 
   // ----------------------------------------------------------
@@ -157,6 +306,8 @@ export class RollRequestChat {
       targetedActors: requestData.targetedActors ?? [],
       isSaveRequest: requestData.isSaveRequest ?? false,
       checkKindLabel: RollRequestChat._getCheckKindLabel(requestData),
+      description: requestData.description ?? "",
+      tableHtml: RollRequestChat._renderResultTable(requestData),
       summaryHtml: RollRequestChat._renderSummary(requestData),
       aggregateHtml: RollRequestChat._renderAggregate(requestData),
     };
@@ -1300,6 +1451,8 @@ export class RollRequestChat {
       targetedActors: flags.targetedActors ?? [],
       isSaveRequest: flags.isSaveRequest ?? false,
       checkKindLabel: RollRequestChat._getCheckKindLabel(flags),
+      description: flags.description ?? "",
+      tableHtml: RollRequestChat._renderResultTable(flags),
       summaryHtml: RollRequestChat._renderSummary(flags),
       aggregateHtml: RollRequestChat._renderAggregate(flags),
     };
@@ -1336,7 +1489,7 @@ export class RollRequestChat {
       const dc = flags.dc;
       const showResults = flags.showResults;
       for (const entry of Object.values(rolledActors)) {
-        list.insertAdjacentHTML("beforeend", await RollRequestChat._buildResultHTML(entry, dc, showResults, hideTotalFromPlayers));
+        list.insertAdjacentHTML("beforeend", await RollRequestChat._buildResultHTML(entry, dc, showResults, hideTotalFromPlayers, flags.resultTable));
       }
     }
 
@@ -1385,7 +1538,7 @@ export class RollRequestChat {
       const dc = flags.dc;
       const showResults = flags.showResults;
       for (const entry of Object.values(rolledActors)) {
-        primaryContainer.insertAdjacentHTML("beforeend", await RollRequestChat._buildResultHTML(entry, dc, showResults, hideTotalFromPlayers));
+        primaryContainer.insertAdjacentHTML("beforeend", await RollRequestChat._buildResultHTML(entry, dc, showResults, hideTotalFromPlayers, flags.resultTable));
       }
     }
 
@@ -1433,9 +1586,13 @@ export class RollRequestChat {
               ? '<i class="fas fa-times arr-fail-icon"></i>'
               : '<i class="fas fa-times arr-fail-icon gm-only"></i>';
           }
+          // A result table replaces the number with its mapped label (see _buildResultHTML)
+          const tableLabel = RollRequestChat._resolveTableLabel(flags.resultTable, result.total);
+          const shownTotal = tableLabel ?? result.total;
+          const labelClass = tableLabel ? " arr-total-label" : "";
           const totalHtml = hideTotalFromPlayers
-            ? `<span class="arr-total-value gm-only">${result.total}</span><span class="arr-total-value arr-player-only">?</span>`
-            : `<span class="arr-total-value">${result.total}</span>`;
+            ? `<span class="arr-total-value${labelClass} gm-only">${shownTotal}</span><span class="arr-total-value arr-player-only">?</span>`
+            : `<span class="arr-total-value${labelClass}">${shownTotal}</span>`;
 
           // Render roll details
           let rollDetailsHtml = "";
@@ -1496,8 +1653,12 @@ export class RollRequestChat {
   // Build a result <li> HTML string (for insertAdjacentHTML)
   // ----------------------------------------------------------
 
-  static async _buildResultHTML(entry, dc, showResults, hideTotalFromPlayers = false) {
+  static async _buildResultHTML(entry, dc, showResults, hideTotalFromPlayers = false, resultTable = null) {
     const passed = dc != null ? entry.total >= dc : null;
+
+    // With a result table the row shows the mapped label instead of the number;
+    // the real roll and formula stay one click away in the expandable details.
+    const tableLabel = RollRequestChat._resolveTableLabel(resultTable, entry.total);
 
     let notesHtml = "";
     if (entry.notes?.length) {
@@ -1535,9 +1696,11 @@ export class RollRequestChat {
       : `arr-result-total ${passed === true ? "arr-pass" : passed === false ? "arr-fail" : ""}`;
 
     // In publicblind mode the total is gm-only; players see a ? placeholder instead
+    const shownTotal = tableLabel ?? entry.total;
+    const labelClass = tableLabel ? " arr-total-label" : "";
     const totalHtml = hideTotalFromPlayers
-      ? `<span class="arr-total-value gm-only">${entry.total}</span><span class="arr-total-value arr-player-only">?</span>`
-      : `<span class="arr-total-value">${entry.total}</span>`;
+      ? `<span class="arr-total-value${labelClass} gm-only">${shownTotal}</span><span class="arr-total-value arr-player-only">?</span>`
+      : `<span class="arr-total-value${labelClass}">${shownTotal}</span>`;
 
     const hasDetails = rollDetailsHtml || notesHtml;
     const detailsClass = hideTotalFromPlayers ? " gm-only" : "";
@@ -1613,7 +1776,7 @@ export class RollRequestChat {
   // Create a result <li> element for a roll (DOM node for live render)
   // ----------------------------------------------------------
 
-  static async _createResultElement(entry, dc, showResults, hideTotalFromPlayers = false) {
+  static async _createResultElement(entry, dc, showResults, hideTotalFromPlayers = false, resultTable = null) {
     const li = document.createElement("li");
     li.classList.add("arr-result-entry", "flexrow");
     li.dataset.tokenId = entry.tokenId;
@@ -1624,6 +1787,12 @@ export class RollRequestChat {
 
     // In publicblind mode, players don't see the total number
     const showTotal = !hideTotalFromPlayers || game.user.isGM;
+
+    // With a result table the row shows the mapped label instead of the number
+    // (see _buildResultHTML, which does the same for the stored card content).
+    const tableLabel = RollRequestChat._resolveTableLabel(resultTable, entry.total);
+    const shownTotal = tableLabel ?? entry.total;
+    const labelClass = tableLabel ? " arr-total-label" : "";
 
     let notesHtml = "";
     if (entry.notes?.length) {
@@ -1652,7 +1821,7 @@ export class RollRequestChat {
           <span class="arr-actor-name">${entry.actorName}</span>
         </div>
         <div class="arr-result-total ${passClass}">
-          ${showTotal ? `<span class="arr-total-value">${entry.total}</span>` : '<span class="arr-total-value">?</span>'}
+          ${showTotal ? `<span class="arr-total-value${labelClass}">${shownTotal}</span>` : '<span class="arr-total-value">?</span>'}
           ${passed === true ? '<i class="fas fa-check arr-pass-icon"></i>' : ""}
           ${passed === false ? '<i class="fas fa-times arr-fail-icon"></i>' : ""}
           ${hasDetails && showRollDetails ? '<i class="fas fa-chevron-down arr-expand-icon"></i>' : ""}
@@ -1726,7 +1895,7 @@ export class RollRequestChat {
         list.innerHTML = "";
         const rolledActors = flags.rolledActors || {};
         for (const entry of Object.values(rolledActors)) {
-          list.appendChild(await RollRequestChat._createResultElement(entry, flags.dc, flags.showResults, hideTotalFromPlayers));
+          list.appendChild(await RollRequestChat._createResultElement(entry, flags.dc, flags.showResults, hideTotalFromPlayers, flags.resultTable));
         }
       }
 
@@ -1759,7 +1928,7 @@ export class RollRequestChat {
         primaryContainer.innerHTML = "";
         const rolledActors = flags.rolledActors || {};
         for (const entry of Object.values(rolledActors)) {
-          primaryContainer.appendChild(await RollRequestChat._createResultElement(entry, flags.dc, flags.showResults, hideTotalFromPlayers));
+          primaryContainer.appendChild(await RollRequestChat._createResultElement(entry, flags.dc, flags.showResults, hideTotalFromPlayers, flags.resultTable));
         }
       }
 
@@ -1775,7 +1944,7 @@ export class RollRequestChat {
 
         // Inline primary result
         if (actorResults[actorId]) {
-          await RollRequestChat._setInlineResult(block, actorResults[actorId], flags.dc, flags.showResults, hideTotalFromPlayers);
+          await RollRequestChat._setInlineResult(block, actorResults[actorId], flags.dc, flags.showResults, hideTotalFromPlayers, flags.resultTable);
         }
 
         // Aid results
@@ -1860,7 +2029,7 @@ export class RollRequestChat {
   // Set inline result on a targeted actor's header row (live DOM path)
   // ----------------------------------------------------------
 
-  static async _setInlineResult(block, result, dc, showResults, hideTotalFromPlayers = false) {
+  static async _setInlineResult(block, result, dc, showResults, hideTotalFromPlayers = false, resultTable = null) {
     const inlineDiv = block.querySelector('.arr-inline-result');
     const rollBtn = block.querySelector('.arr-roll-btn[data-action="rollTargeted"]');
     if (!inlineDiv) return;
@@ -1869,6 +2038,11 @@ export class RollRequestChat {
     const passed = (dc != null && canSeeResults) ? result.total >= dc : null;
     const passClass = passed === true ? "arr-pass" : passed === false ? "arr-fail" : "";
     const showTotal = !hideTotalFromPlayers || game.user.isGM;
+
+    // With a result table the row shows the mapped label instead of the number
+    const tableLabel = RollRequestChat._resolveTableLabel(resultTable, result.total);
+    const shownTotal = tableLabel ?? result.total;
+    const labelClass = tableLabel ? " arr-total-label" : "";
 
     let passFailHtml = "";
     if (passed === true) passFailHtml = '<i class="fas fa-check arr-pass-icon"></i>';
@@ -1892,7 +2066,7 @@ export class RollRequestChat {
     const chevronHtml = hasDetails ? '<i class="fas fa-chevron-down arr-expand-icon"></i>' : "";
 
     inlineDiv.className = `arr-inline-result arr-result-total ${passClass}`;
-    inlineDiv.innerHTML = `${showTotal ? `<span class="arr-total-value">${result.total}</span>` : '<span class="arr-total-value">?</span>'}${passFailHtml}${chevronHtml}`;
+    inlineDiv.innerHTML = `${showTotal ? `<span class="arr-total-value${labelClass}">${shownTotal}</span>` : '<span class="arr-total-value">?</span>'}${passFailHtml}${chevronHtml}`;
     inlineDiv.removeAttribute("style");
 
     // Inject roll details block after the actor row

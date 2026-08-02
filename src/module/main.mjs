@@ -182,19 +182,112 @@ Hooks.once("ready", () => {
   };
 
   /**
+   * Dismiss one or more roll-request cards that have served their purpose — for
+   * example a multi-step sequence that has finished collecting its rolls and
+   * written the outcome somewhere else.
+   *
+   * Unlike deleting the messages yourself, this unregisters each card's onResult
+   * stream *first*, so a consumer does not receive the terminal
+   * { rollType: "cancelled", reason: "deleted" } event for a request that
+   * actually completed. Any unresolved awaitResult promise still resolves null.
+   *
+   * All cards are removed in a single broadcast, so a batch disappears at once
+   * rather than popping one at a time on players' screens.
+   *
+   * @param {ChatMessage|string|Array<ChatMessage|string>} messages - Card(s) or message ID(s).
+   * @returns {Promise<string[]>} The IDs actually deleted (unknown ones are skipped).
+   */
+  game.pf1RollRequests.closeRequest = async (messages) => {
+    if (!game.user.isGM) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.GMOnly"));
+      return [];
+    }
+
+    const ids = (Array.isArray(messages) ? messages : [messages])
+      .map((m) => m?.id ?? m)
+      .filter((id) => typeof id === "string" && game.messages.has(id));
+    if (!ids.length) return [];
+
+    for (const id of ids) RollRequestChat.cancelResultCallback(id);
+    await ChatMessage.deleteDocuments(ids);
+    return ids;
+  };
+
+  /**
+   * Replace a card's `description` slot and re-render it in place.
+   *
+   * The card's HTML lives in message.content, rebuilt from flags, so setting the
+   * flag alone would not change anything on screen — this does both. Use it to
+   * post a card with a plain reference table and then re-post it with the rolled
+   * row highlighted once the result is in.
+   *
+   * @param {ChatMessage|string} message - The card, or its message ID.
+   * @param {string} html                - Raw HTML (not escaped, not gated).
+   * @returns {Promise<ChatMessage|undefined>}
+   */
+  game.pf1RollRequests.setDescription = async (message, html) => {
+    if (!game.user.isGM) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.GMOnly"));
+      return;
+    }
+
+    const msg = message?.id ? message : game.messages.get(message);
+    const current = msg?.flags?.[MODULE_ID];
+    if (!current?.request) {
+      ui.notifications.error(game.i18n.localize("RR.Notif.CantReadData"));
+      return;
+    }
+
+    const description = html ?? "";
+    await msg.update({
+      [`flags.${MODULE_ID}.description`]: description,
+      content: await RollRequestChat._rebuildCardContent({ ...current, description }),
+    });
+    return msg;
+  };
+
+  /**
    * Programmatically create a roll request chat card.
    *
    * @param {object} options
    * @param {string} options.type        - "ability", "save", "skill", or "dice"
-   * @param {string} options.key         - The key for the check (e.g. "str", "ref", "per", "d20")
+   * @param {string} options.key         - The key for the check (e.g. "str", "ref", "per"). For
+   *   type "dice" this is a roll formula — any valid one, not just a bare die ("2d6+2", "2d4-2").
+   *   Validated at request time so a bad formula fails here rather than on a player's click.
    * @param {string} [options.name]      - Display name (auto-resolved from key if omitted)
-   * @param {string} [options.mode="multi"]       - "single" or "multi"
-   * @param {number|null} [options.dc=null]       - The DC (null for no DC)
+   * @param {string} [options.mode="multi"]       - "single", "multi", or "targeted". "targeted"
+   *   pins specific tokens to the card (see targetedActors) instead of letting any player roll.
+   * @param {object[]} [options.targetedActors]   - Required for mode "targeted": one entry per
+   *   token, each needing only { id } (the token document ID). `tokenUUID`, `name`, `img`, and
+   *   `isHidden` are auto-resolved from the canvas token and may be overridden per entry.
+   * @param {boolean} [options.autoRoll=false]    - Targeted mode only: immediately roll every
+   *   target GM-side without dialogs, exactly like the card's Roll All button. createRequest does
+   *   not resolve until every target has rolled, so the returned message's flags are fully
+   *   populated. Equivalent to calling game.pf1RollRequests.bulkRollTargeted() afterwards.
+   * @param {number|null} [options.dc=null]       - The DC (null for no DC). Forced to null when a
+   *   resultTable is set, since a mapped label has no numeric pass/fail.
    * @param {boolean} [options.showDC=false]      - Whether the DC number is visible to players
    * @param {boolean} [options.showResults=false]  - Whether pass/fail indicators are visible to players
    * @param {string} [options.rollMode="roll"]    - "roll", "gmroll", "publicblind" (public, totals obscured), or "blindroll" (GM-only whisper)
    * @param {string} [options.flavor=""]          - Flavor text
    * @param {boolean} [options.includeAid=true]   - Whether Aid Another is included (single mode only; forced off for dice)
+   * @param {string} [options.description=""]     - Raw HTML dropped into a slot near the top of the
+   *   card, below the flavor line. Not escaped and not gated — every player sees it. Intended for
+   *   caller-supplied context (a lookup table, a rules reminder). Update it later, including after
+   *   a roll, with game.pf1RollRequests.setDescription().
+   * @param {object[]} [options.resultTable]      - Maps the roll's total onto a label, so the card
+   *   shows "Banana" instead of "2". Rows are thresholds — [{ label }, { min, label }, ...] — where
+   *   each row covers from its `min` up to the next row's `min - 1`, and the lowest row may omit
+   *   `min` for an open lower end. Rows are sorted here, so declaration order doesn't matter, and
+   *   a table cannot contain a gap. Labels are rendered unescaped, so simple markup works. Setting
+   *   a table forces `dc` to null and suppresses the highest/average aggregate line.
+   * @param {boolean} [options.showTable=false]   - Render the resultTable into the card as a table
+   *   of every possible outcome, highlighting rows that have been rolled and appending the portrait
+   *   of each actor who landed there. Recomputed on every roll. On publicblind cards the highlight
+   *   is GM-only (the table itself still shows), so it can't leak a total shown to players as "?".
+   * @param {boolean} [options.clampTable=false]  - Trim the displayed table's open ends to the
+   *   formula's own reachable range ("≤0" → "0", "5+" → "5–6" for 2d4-2). Off by default: a table
+   *   whose formula can only reach part of it still renders in full.
    * @param {string} [options.summaryKey]         - Key of a summary formatter registered via
    *   game.pf1RollRequests.registerSummary(). Renders a live aggregate line into the card, recomputed
    *   on each roll. Player visibility follows showResults. Currently displayed in multi-check cards.
@@ -213,9 +306,10 @@ Hooks.once("ready", () => {
    *   results: [], aidResults: [], dc } — branch on rollType before reading roll fields.
    *
    * @returns {Promise<object|null>|ChatMessage|undefined}  When awaitResult is true (single mode),
-   *   returns a Promise that resolves with the result. In "multi" and "targeted" modes, returns the
-   *   created ChatMessage (a handle for reading flags or correlating with onResult / the
-   *   pf1RollRequests.rollComplete hook). Otherwise returns undefined.
+   *   returns a Promise that resolves with the result. Otherwise returns the created ChatMessage —
+   *   a handle for reading flags, correlating with onResult / the pf1RollRequests.rollComplete
+   *   hook, or later closing the card with closeRequest(). Returns undefined only when the request
+   *   was rejected (bad type, invalid formula, empty targetedActors, non-GM caller).
    *
    * @example
    * // Request a Perception skill check, DC 15, public roll with results hidden
@@ -250,6 +344,51 @@ Hooks.once("ready", () => {
       return;
     }
 
+    // For "dice" the key is a roll formula. Validate it here so a typo fails on
+    // the GM's request rather than on whichever player clicks the roll button.
+    if (type === "dice" && !Roll.validate(key)) {
+      ui.notifications.error(game.i18n.format("RR.Notif.InvalidFormula", { formula: key }));
+      return;
+    }
+
+    // --- Result table: normalize, sort, and (optionally) find the formula's range ---
+    let resultTable = null;
+    if (options.resultTable != null) {
+      if (!Array.isArray(options.resultTable) || options.resultTable.length === 0) {
+        ui.notifications.error(game.i18n.localize("RR.Notif.ResultTableInvalid"));
+        return;
+      }
+      // Rows are thresholds, so sorting them ascending is what makes each row's
+      // upper bound "the next row's min - 1" when the card renders the table.
+      resultTable = options.resultTable
+        .map((row) => ({
+          min: Number.isFinite(Number(row?.min)) ? Number(row.min) : null,
+          label: row?.label ?? "",
+        }))
+        .sort((a, b) => {
+          const am = a.min ?? Number.NEGATIVE_INFINITY;
+          const bm = b.min ?? Number.NEGATIVE_INFINITY;
+          if (am === bm) return 0;
+          return am < bm ? -1 : 1;
+        });
+    }
+
+    const showTable = resultTable ? (options.showTable ?? false) : false;
+    const clampTable = resultTable ? (options.clampTable ?? false) : false;
+
+    // Clamping trims the table's open ends to what the formula can actually
+    // roll. Resolved once here rather than on every re-render.
+    let tableBounds = null;
+    if (clampTable && type === "dice") {
+      try {
+        const low = await new Roll(key).evaluate({ minimize: true });
+        const high = await new Roll(key).evaluate({ maximize: true });
+        tableBounds = { min: low.total, max: high.total };
+      } catch (err) {
+        console.error(`${MODULE_ID} | Could not determine formula bounds for "${key}":`, err);
+      }
+    }
+
     // Resolve display name if not provided
     let name = options.name;
     if (!name) {
@@ -268,7 +407,9 @@ Hooks.once("ready", () => {
     }
 
     const mode = options.mode ?? "multi";
-    const dc = options.dc ?? null;
+    // A mapped result has no numeric pass/fail, so a DC would be meaningless —
+    // and nulling it also drops the pass/fail icons and the feasibility gate.
+    const dc = resultTable ? null : (options.dc ?? null);
     const showDC = options.showDC ?? false;
     const showResults = options.showResults ?? false;
     const rollMode = options.rollMode ?? "roll";
@@ -303,6 +444,11 @@ Hooks.once("ready", () => {
       flavor,
       includeAid,
       request: { type, key, name },
+      description: options.description ?? "",
+      resultTable,
+      showTable,
+      clampTable,
+      tableBounds,
       summaryKey: options.summaryKey ?? null,
       rolledActors: {},
       aidResults: {},
@@ -336,9 +482,10 @@ Hooks.once("ready", () => {
       return RollRequestChat.registerPendingResult(message.id);
     }
 
-    // Multi-check: return the message so callers have a handle to read flags
-    // (rolledActors) or correlate with the pf1RollRequests.rollComplete hook.
-    if (mode === "multi") return message;
+    // Every other mode returns the message, so callers always have a handle —
+    // to read flags (rolledActors), correlate with the pf1RollRequests.rollComplete
+    // hook, or later close the card with closeRequest().
+    return message;
   };
 });
 

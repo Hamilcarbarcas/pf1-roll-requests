@@ -125,6 +125,16 @@ Under **Settings → Module Settings → Configure Roll Options** you can show o
 - **Whole categories** — Ability Checks, Saving Throws, Skill Checks, Dice, and Quick Actions.
 - **Individual Quick Actions** — toggle each entry on or off (applies only while the Quick Actions category is shown).
 
+### Custom Formulas & Result Tables
+
+*API only — there is no dialog control for these.*
+
+A request can roll an arbitrary formula (`2d6+2`, `2d4-2`) rather than a check, and map the total onto a **label** instead of a number: roll `2d4-2` and the card reports *Banana* rather than *2*. The table is written as a list of thresholds, so it can never leave a value unmapped, and it can optionally be rendered into the card in full — every possible outcome with its range, the rolled row highlighted, and the portrait of each actor who landed there. The underlying roll is never hidden; expanding the result row shows the formula and dice as usual.
+
+A card can also carry a free-form **description** — raw HTML shown to every player, useful for dropping in a reference table of your own — which can be replaced after the roll to highlight what came up.
+
+See **[api.md](api.md#custom-formulas-and-result-tables)**.
+
 ### API
 
-Other modules and macros can drive Roll Requests programmatically — creating requests, streaming multi-check results, and registering Quick Actions, card summaries, and hooks. See **[api.md](api.md)** for the full developer reference.
+Other modules and macros can drive Roll Requests programmatically — creating requests (including auto-rolled and custom-formula ones), streaming multi-check results, closing finished cards, and registering Quick Actions, card summaries, and hooks. See **[api.md](api.md)** for the full developer reference.

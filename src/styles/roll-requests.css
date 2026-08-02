@@ -202,6 +202,93 @@
   font-size: 11px;
 }
 
+/* ---- Caller-supplied description slot (API: description) ---- */
+
+.arr-description {
+  margin: 4px 0;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: #4b4a44;
+}
+
+.arr-description :is(p, ul, ol):last-child {
+  margin-bottom: 0;
+}
+
+/* ---- Result table slot (API: resultTable + showTable) ---- */
+
+.arr-result-table {
+  width: 100%;
+  margin: 4px 0;
+  border: 1px solid #c0a060;
+  border-radius: 3px;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: #4b4a44;
+  background: rgba(192, 160, 96, 0.08);
+}
+
+.arr-result-table td {
+  padding: 2px 6px;
+  border: 0;
+  border-bottom: 1px solid rgba(192, 160, 96, 0.35);
+}
+
+.arr-result-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.arr-table-range {
+  width: 4.5em;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #666;
+}
+
+.arr-table-hits {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.arr-table-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The hit marker is removed from the DOM for players on publicblind cards, so
+   :has() also withdraws the row highlight for them — no separate player rule. */
+.arr-result-table tr:has(.arr-table-hit) {
+  background: rgba(120, 46, 34, 0.14);
+}
+
+.arr-result-table tr:has(.arr-table-hit) .arr-table-label {
+  font-weight: bold;
+  color: #782e22;
+}
+
+/* Foundry's chat-card `img { max-width: 100% }` collapses these to a sliver
+   inside a shrink-to-fit cell, so the size is pinned explicitly. */
+.arr-table-portrait {
+  flex: 0 0 auto;
+  width: 18px;
+  min-width: 18px;
+  max-width: none;
+  height: 18px;
+  border: 1px solid #782e22;
+  border-radius: 2px;
+  object-fit: cover;
+  vertical-align: middle;
+}
+
+/* ---- Mapped result label (replaces the numeric total when a table is set) ---- */
+
+.arr-total-value.arr-total-label {
+  font-size: 13px;
+  font-weight: bold;
+}
+
 /* ---- Aggregate summary slot (registered summary formatters) ---- */
 
 .arr-summary {

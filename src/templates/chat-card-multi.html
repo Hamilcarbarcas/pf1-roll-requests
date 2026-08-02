@@ -14,6 +14,14 @@
     <div class="arr-flavor">{{flavor}}</div>
     {{/if}}
 
+    {{! Optional caller-supplied HTML slot (API: description). Rendered raw and visible to everyone. }}
+    {{#if description}}
+    <div class="arr-description">{{{description}}}</div>
+    {{/if}}
+
+    {{! Optional result-table slot (API: resultTable + showTable) }}
+    {{{tableHtml}}}
+
     {{! Optional aggregate summary slot (populated via a registered summary formatter) }}
     {{{summaryHtml}}}
 

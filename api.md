@@ -39,13 +39,14 @@ const message = await game.pf1RollRequests.createRequest({
   showResults: true,
   flavor: "Massive Damage Save",
   targetedActors: [{ id: tokenDoc.id }],
+  autoRoll: false,      // true = roll every target immediately, GM-side, no dialogs
 });
 
 // After setting any pending-result tracking, you can auto-roll all targets:
 await game.pf1RollRequests.bulkRollTargeted(message);
 ```
 
-`mode: "targeted"` pins one or more specific tokens to the card rather than letting any player roll. Returns the created chat message.
+`mode: "targeted"` pins one or more specific tokens to the card rather than letting any player roll — this is what the dialog's Selection Check and DM Check modes produce. It requires a non-empty `targetedActors`. Returns the created chat message.
 
 Each `targetedActors` entry requires only `id` (the token document ID). All other fields are automatically resolved from the canvas token:
 
@@ -58,7 +59,101 @@ Each `targetedActors` entry requires only `id` (the token document ID). All othe
 
 `game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place.
 
-When `awaitResult: true` is set (single-check mode only), `createRequest` returns a Promise that resolves with the roll result object once a player completes the roll, or `null` if the chat card is deleted before completion.
+Passing `autoRoll: true` to `createRequest` does the same thing one step earlier — the card is posted and every target rolled before the call resolves, so the returned message's flags already carry the full results. Use `bulkRollTargeted` instead when you need to do something between posting the card and rolling it. Both are GM-side and dialog-free: the rolls execute on the GM's client regardless of who owns the token, which is also what **Roll All** does.
+
+## Closing requests
+
+```js
+await game.pf1RollRequests.closeRequest(message);          // one card
+await game.pf1RollRequests.closeRequest([msgA, msgB]);     // or several, in one broadcast
+```
+
+Deletes request cards that have served their purpose — a multi-step sequence that has finished collecting its rolls and written the outcome elsewhere, for instance. Accepts messages or message IDs, singly or as an array, and returns the IDs actually deleted (unknown ones are skipped).
+
+Prefer this over deleting the messages yourself. `closeRequest` unregisters each card's `onResult` stream **before** deleting, so your handler does not receive the terminal `{ rollType: "cancelled", reason: "deleted" }` event for a request that in fact completed normally. Deleting directly always fires it. Any still-unresolved `awaitResult` promise resolves `null` either way.
+
+Batching also matters cosmetically: one `deleteDocuments` call means a group of cards vanishes from players' logs at once rather than popping one at a time.
+
+Call it from the resolution point — the awaited result, or the final `onResult` — rather than from a timer. Card updates run through a per-message queue, and resolving first guarantees it has drained. If a player happens to be mid-roll-dialog when you delete, their result arrives at a message that no longer exists and is logged and dropped.
+
+## Custom formulas and result tables
+
+`type: "dice"` takes any valid roll formula as its `key`, not just a bare die:
+
+```js
+game.pf1RollRequests.createRequest({ type: "dice", key: "2d6+2", mode: "multi" });
+```
+
+The formula is validated when the request is created, so a typo surfaces on your call rather than on whichever player clicks the roll button.
+
+### Mapping totals to labels
+
+A `resultTable` maps the total onto a label, so the card shows **Banana** where it would otherwise show **2**:
+
+```js
+await game.pf1RollRequests.createRequest({
+  type: "dice", key: "2d4-2", mode: "single",
+  flavor: "Foraging",
+  resultTable: [
+    { label: "Nothing" },          // open-ended below — everything under the next min
+    { min: 1, label: "Apple" },
+    { min: 2, label: "Banana" },   // covers 2–3
+    { min: 4, label: "Cherry" },
+    { min: 5, label: "Everything" },  // open-ended above
+  ],
+  showTable: true,
+});
+```
+
+Rows are **thresholds**, not explicit ranges: each row covers from its `min` up to the next row's `min - 1`, and the lowest row may omit `min` entirely. Two consequences worth knowing:
+
+- **A table cannot contain a gap.** Writing `{min, max}` pairs by hand makes it easy to leave a value unmapped — the example above, expressed as "less than 0 / 1 / 2–3 / 4 / more than 5", silently drops **0** and **5**, two of the seven outcomes `2d4-2` can produce. Thresholds cover every value by construction.
+- **Declaration order doesn't matter.** Rows are sorted when the request is created.
+
+Non-integer totals (`1d6/2`) resolve fine. A total that somehow matches no row falls back to displaying the number.
+
+Setting a table also forces `dc` to `null` — a mapped label has no numeric pass/fail — and suppresses the highest/average aggregate line, which would otherwise print an average of numbers that appear nowhere on the card.
+
+Labels are rendered **unescaped**, so simple markup (`"<b>Cherry</b>"`) works.
+
+### Displaying the table
+
+`showTable: true` renders the whole table into the card: every row with its derived range, the rolled row highlighted, and the portrait of each actor who landed there appended to it. It recomputes on every roll, so the highlight maintains itself — no follow-up call needed. On a multi-check where several people roll, every matched row is highlighted and carries its own set of portraits.
+
+| Option | Default | Effect |
+|---|---|---|
+| `showTable` | `false` | Render the table into the card |
+| `clampTable` | `false` | Trim the open ends to the formula's reachable range — `≤0` → `0`, `5+` → `5–6` for `2d4-2` |
+
+`clampTable` is off by default because a formula that can only reach part of its table should still display the table in full. Rows the formula cannot reach at all keep their open-ended form rather than rendering an inverted range.
+
+On `publicblind` cards the highlight and portraits are GM-only while the table itself stays visible to everyone — otherwise the highlighted row would hand players the total the card is deliberately showing them as `?`.
+
+The numeric roll is never lost: expanding a result row shows the full formula and dice breakdown as usual.
+
+## The description slot
+
+`description` drops raw HTML into a slot near the top of the card, below the flavor line:
+
+```js
+const message = await game.pf1RollRequests.createRequest({
+  type: "dice", key: "1d100", mode: "single",
+  description: `<table><tr><td>01–50</td><td>Minor effect</td></tr>…</table>`,
+});
+
+// Later — e.g. once the roll is in, to highlight the row that came up
+await game.pf1RollRequests.setDescription(message, updatedHtml);
+```
+
+It is **not escaped and not gated**: whatever you pass renders as-is and every player sees it. Intended for caller-supplied context — a lookup table you maintain yourself, a rules reminder, a link.
+
+`setDescription(message, html)` replaces it on an existing card. It rebuilds and re-renders the card content, which a bare `setFlag` would not do — the card's HTML lives in `message.content`, regenerated from flags, so the flag and the content have to move together.
+
+Note this is a different mechanism from a [card summary](#card-summaries-live-aggregates): a summary is a *registered formatter*, held in memory per-client, so a GM reload leaves the card without it. A description is stored on the message and survives reloads. Use a summary for something computed from results, a description for content you author.
+
+`createRequest` returns the created `ChatMessage` in every mode, so you always have a handle for reading flags, correlating with `onResult` / the `rollComplete` hook, or later passing to `closeRequest`. It returns `undefined` only when the request was rejected — bad type, invalid formula, empty `targetedActors`, or a non-GM caller.
+
+The one exception is `awaitResult: true` (single-check mode only), where it instead returns a Promise resolving with the roll result object once a player completes the roll, or `null` if the chat card is deleted before completion.
 
 ### Streaming results from a multi-check (`onResult`)
 
