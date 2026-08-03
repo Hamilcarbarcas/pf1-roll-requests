@@ -2,9 +2,9 @@
      Single-Check Chat Card
      Two sections: Roll Check (the main roll) and Aid Another.
      ============================================================ -->
-<div class="pf1-roll-requests chat-card arr-card" data-mode="single">
+<div class="pf1-roll-requests chat-card arr-card{{#if locked}} arr-card-locked{{/if}}" data-mode="single">
     <header class="arr-card-header flexrow">
-        <h3 class="arr-card-title">{{{name}}}{{#if checkKindLabel}} <span class="arr-card-kind">{{checkKindLabel}}</span>{{/if}}</h3>
+        <h3 class="arr-card-title">{{{name}}}{{#if checkKindLabel}} <span class="arr-card-kind">{{checkKindLabel}}</span>{{/if}}{{#if locked}} <i class="fas fa-lock arr-locked-icon" title="{{localize "RR.Card.Locked"}}"></i>{{/if}}</h3>
         {{#if dc}}
         <h3 class="arr-dc-display {{#unless showDC}}gm-only{{/unless}}">{{localize "RR.Card.DCLabel"}} {{dc}}</h3>
         {{/if}}
@@ -28,18 +28,18 @@
     <div class="arr-card-body">
         <!-- Roll Check Section -->
         <div class="arr-roll-section arr-primary-roll">
-            <div class="arr-section-header">{{localize "RR.Card.RollCheck"}}</div>
+            <div class="arr-section-header">{{#if isSelection}}{{localize "RR.Card.SelectResult"}}{{else}}{{localize "RR.Card.RollCheck"}}{{/if}}</div>
             <div class="arr-roll-prompt flexrow">
                 <span class="arr-prompt-text">
-                    {{localize "RR.Card.RollName" name=requestName}}
+                    {{#if isSelection}}{{localize "RR.Card.SelectPrompt"}}{{else}}{{localize "RR.Card.RollName" name=requestName}}{{/if}}
                     {{#if includeAid}}
                     <span class="arr-aid-bonus-display" style="display:none;">
                         ({{localize "RR.Card.AidLabel"}} <strong class="arr-aid-bonus-value">+0</strong>)
                     </span>
                     {{/if}}
                 </span>
-                <a class="arr-roll-btn" data-action="rollPrimary" title="{{localize "RR.Card.RollCheckTitle"}}">
-                    <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
+                <a class="arr-roll-btn" data-action="rollPrimary" title="{{#if isSelection}}{{localize "RR.Card.SelectTitle"}}{{else}}{{localize "RR.Card.RollCheckTitle"}}{{/if}}">
+                    {{#if isSelection}}<i class="fas fa-list-ul arr-select-icon"></i>{{else}}<img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />{{/if}}
                 </a>
             </div>
             <!-- Primary roll result appears here -->

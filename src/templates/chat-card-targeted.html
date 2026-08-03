@@ -1,6 +1,6 @@
-<div class="pf1-roll-requests chat-card arr-card" data-mode="targeted">
+<div class="pf1-roll-requests chat-card arr-card{{#if locked}} arr-card-locked{{/if}}" data-mode="targeted">
     <header class="arr-card-header flexrow">
-        <h3 class="arr-card-title">{{{name}}}{{#if checkKindLabel}} <span class="arr-card-kind">{{checkKindLabel}}</span>{{/if}}</h3>
+        <h3 class="arr-card-title">{{{name}}}{{#if checkKindLabel}} <span class="arr-card-kind">{{checkKindLabel}}</span>{{/if}}{{#if locked}} <i class="fas fa-lock arr-locked-icon" title="{{localize "RR.Card.Locked"}}"></i>{{/if}}</h3>
         {{#if dc}}
         <h3 class="arr-dc-display {{#unless showDC}}gm-only{{/unless}}">{{localize "RR.Card.DCLabel"}} {{dc}}</h3>
         {{/if}}
@@ -44,8 +44,8 @@
                 </div>
                 <!-- Result injected here by JS once rolled (replaces roll button) -->
                 <div class="arr-inline-result arr-result-total" style="display:none;"></div>
-                <a class="arr-roll-btn" data-action="rollTargeted" data-actor-id="{{this.id}}" title="{{localize "RR.Card.RollCheckTitle"}}">
-                    <img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />
+                <a class="arr-roll-btn" data-action="rollTargeted" data-actor-id="{{this.id}}" title="{{#if @root.isSelection}}{{localize "RR.Card.SelectTitle"}}{{else}}{{localize "RR.Card.RollCheckTitle"}}{{/if}}">
+                    {{#if @root.isSelection}}<i class="fas fa-list-ul arr-select-icon"></i>{{else}}<img src="icons/svg/d20-grey.svg" class="arr-d20-icon" />{{/if}}
                 </a>
             </div>
 

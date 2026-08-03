@@ -131,6 +131,8 @@ Under **Settings → Module Settings → Configure Roll Options** you can show o
 
 A request can roll an arbitrary formula (`2d6+2`, `2d4-2`) rather than a check, and map the total onto a **label** instead of a number: roll `2d4-2` and the card reports *Banana* rather than *2*. The table is written as a list of thresholds, so it can never leave a value unmapped, and it can optionally be rendered into the card in full — every possible outcome with its range, the rolled row highlighted, and the portrait of each actor who landed there. The underlying roll is never hidden; expanding the result row shows the formula and dice as usual.
 
+A table can also be **chosen from instead of rolled on**. With `selectFromTable`, the card's die becomes a list button: clicking it opens a small dropdown of the table's outcomes, and the pick is recorded exactly as a roll would be — same result row, same live table highlight, same portrait. Useful when the party is picking something rather than leaving it to chance (who takes which watch, which door each character opens) but you still want it collected on one card. Available in every check mode. A pick is final by default; requests can opt into `allowRepick`, which keeps the button live so a choice can be changed while the card is up — but only your own, so nobody can change someone else's.
+
 A card can also carry a free-form **description** — raw HTML shown to every player, useful for dropping in a reference table of your own — which can be replaced after the roll to highlight what came up.
 
 See **[api.md](api.md#custom-formulas-and-result-tables)**.

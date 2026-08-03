@@ -76,6 +76,24 @@ Batching also matters cosmetically: one `deleteDocuments` call means a group of 
 
 Call it from the resolution point — the awaited result, or the final `onResult` — rather than from a timer. Card updates run through a per-message queue, and resolving first guarantees it has drained. If a player happens to be mid-roll-dialog when you delete, their result arrives at a message that no longer exists and is logged and dropped.
 
+### Closing without deleting (`lockRequest`)
+
+```js
+await game.pf1RollRequests.lockRequest(message);
+```
+
+Leaves the card exactly where it is and stops it accepting input. The roll and selection buttons disappear, a lock appears beside the title, and a click that races the re-render is refused with a notification. Use it where the card is worth keeping as a visible record — a re-pickable selection whose choices are now final, for instance.
+
+Like `closeRequest` it unregisters the `onResult` stream first, so a locked request never delivers the terminal `cancelled` event. Any unresolved `awaitResult` promise resolves `null`, since the roll it was waiting on can no longer happen. Locking is one-way and idempotent; a locked card that is later deleted behaves like any other deleted message.
+
+| | `closeRequest` | `lockRequest` |
+|---|---|---|
+| Card | deleted | stays, visibly locked |
+| Buttons | gone with the card | hidden |
+| Further results | impossible | refused |
+| `onResult` | unregistered, no terminal event | unregistered, no terminal event |
+| Batching | accepts an array | one card per call |
+
 ## Custom formulas and result tables
 
 `type: "dice"` takes any valid roll formula as its `key`, not just a bare die:
@@ -130,6 +148,62 @@ Labels are rendered **unescaped**, so simple markup (`"<b>Cherry</b>"`) works.
 On `publicblind` cards the highlight and portraits are GM-only while the table itself stays visible to everyone — otherwise the highlighted row would hand players the total the card is deliberately showing them as `?`.
 
 The numeric roll is never lost: expanding a result row shows the full formula and dice breakdown as usual.
+
+### Choosing instead of rolling
+
+`selectFromTable: true` turns the card's roll into a **choice**. The die becomes a list button; clicking it opens a dropdown of the table's rows, and the picked row is recorded as that actor's result — same result row on the card, same `showTable` highlight and portrait, same `onResult` / `awaitResult` delivery.
+
+```js
+const message = await game.pf1RollRequests.createRequest({
+  mode: "multi",
+  flavor: "Choose your watch",
+  selectFromTable: true,
+  showTable: true,
+  resultTable: [
+    { label: "First watch" },
+    { min: 1, label: "Second watch" },
+    { min: 2, label: "Third watch" },
+  ],
+  onResult: ({ result }) => console.log(`${result.actorName} chose ${result.selectedLabel}`),
+});
+```
+
+It requires a `resultTable` — that table is the list of choices — and works in `single`, `multi`, and `targeted` mode. Rows whose label is empty are not offered; labels carrying markup are flattened to plain text for the dropdown.
+
+The result entry keeps the same shape as a rolled one, with three differences:
+
+| Field | Value |
+|---|---|
+| `total` | The chosen row's threshold (`min`), so the table still maps it back to the label. The open-ended lowest row uses the value just below the next row's `min`. |
+| `selectedIndex` / `selectedLabel` | The row picked, exactly — use these rather than re-deriving from `total`. |
+| `rollData` / `formula` / `naturalRoll` | `null`. The result row has no expandable dice breakdown, because there are no dice. |
+
+Because nothing is rolled, several roll-side behaviours drop out: `type` and `key` become optional (they default to an unused `dice` request, and the card is named from `flavor`), Aid Another is forced off, `clampTable` is ignored, trained-only and natural-20 feasibility gating do not apply, and no Dice So Nice animation fires. `showTable` also drops the range column, since the numbers behind the rows are bookkeeping rather than outcomes.
+
+`autoRoll` and **Roll All** are unavailable on a selection card — every result is a person's deliberate choice, so there is nothing to fire on their behalf. Passing `autoRoll: true` logs a console warning and is ignored; `bulkRollTargeted()` returns without doing anything.
+
+Dismissing the dropdown is treated exactly like cancelling a roll dialog: nothing is recorded and the actor can still choose later.
+
+#### Changing a selection (`allowRepick`)
+
+A pick is final by default, exactly like a roll. Set `allowRepick: true` to let it be changed for as long as the card is up: the button stays live after a choice, clicking it again reopens the dropdown on the current one, and confirming replaces the old entry in place. The card, the `showTable` highlight, and any summary all recompute from the new value.
+
+```js
+game.pf1RollRequests.createRequest({
+  mode: "multi", flavor: "Choose your watch",
+  selectFromTable: true, allowRepick: true, showTable: true,
+  resultTable: [{ label: "First watch" }, { min: 1, label: "Second watch" }, { min: 2, label: "Third watch" }],
+});
+```
+
+Re-picking is confined to the slot the clicker already filled — their own token in `single` and `multi` mode, and in `targeted` the target they were already allowed to roll for — so one player cannot overwrite another's choice. Everyone else still gets the usual "already used their action" warning.
+
+Two consequences for consumers of a re-pickable request:
+
+- **`onResult` fires again** for the same actor, carrying the new entry. Treat each payload as the current state of that actor's slot rather than a new participant — `results` still holds one entry per actor.
+- **`awaitResult` resolves on the first pick only.** The promise is consumed at that point, so later changes are not delivered through it. Use `onResult` (or read the card's flags at the moment you need them) when a request is meant to stay open to changes.
+
+Close the window for changes when it should end — while the card is live, `allowRepick` choices are editable by design. `closeRequest(message)` removes the card; [`lockRequest(message)`](#closing-without-deleting-lockrequest) leaves it up with the choices frozen, which is usually what you want when the picks themselves are the record.
 
 ## The description slot
 

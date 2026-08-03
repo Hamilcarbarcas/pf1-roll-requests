@@ -381,6 +381,55 @@
   filter: brightness(0.5) sepia(1) saturate(5) hue-rotate(-10deg);
 }
 
+/* ---- Selection button (selectFromTable requests roll nothing) ---- */
+
+.arr-select-icon {
+  display: block;
+  width: 32px;
+  line-height: 32px;
+  margin-top: 8px;
+  font-size: 22px;
+  text-align: center;
+  color: #191813;
+  opacity: 0.7;
+  transition: all 0.15s;
+}
+
+.arr-roll-btn:hover .arr-select-icon {
+  opacity: 1;
+  color: #782e22;
+}
+
+.arr-roll-btn-sm .arr-select-icon,
+.arr-save-request .arr-select-icon {
+  width: 28px;
+  line-height: 22px;
+  margin-top: 2px;
+  font-size: 18px;
+}
+
+/* ---- Locked card (API: lockRequest) ---- */
+
+/* The card stays on screen as a record; nothing on it is actionable any more.
+   Hiding the buttons here rather than in _updateButtonVisibility keeps one rule
+   covering every mode, including targeted's per-actor rows. */
+.arr-card-locked .arr-roll-btn,
+.arr-card-locked .arr-save-bulk-btns {
+  display: none !important;
+}
+
+.arr-card-locked .arr-prompt-text,
+.arr-card-locked .arr-section-header {
+  opacity: 0.55;
+}
+
+.arr-locked-icon {
+  margin-left: 4px;
+  font-size: 11px;
+  color: #7a7971;
+  vertical-align: middle;
+}
+
 /* ---- Results List ---- */
 
 .arr-results-list {

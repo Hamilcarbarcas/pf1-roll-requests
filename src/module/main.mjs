@@ -214,6 +214,47 @@ Hooks.once("ready", () => {
   };
 
   /**
+   * Close a card to further results without removing it.
+   *
+   * `closeRequest` deletes; this leaves the card on screen exactly as it stands
+   * and stops accepting input — the roll and selection buttons disappear, a lock
+   * appears in the header, and a click that races the re-render is refused. For
+   * a re-pickable selection card this is what "locking in" looks like: the
+   * choices stay readable as a record, but nobody can change theirs.
+   *
+   * Like `closeRequest` it unregisters the card's `onResult` stream first, so a
+   * consumer does not receive a terminal `cancelled` event for a request that in
+   * fact completed. Any unresolved `awaitResult` promise resolves `null`, since
+   * the roll it was waiting for can no longer happen.
+   *
+   * @param {ChatMessage|string} message - The card, or its message ID.
+   * @returns {Promise<ChatMessage|undefined>}
+   */
+  game.pf1RollRequests.lockRequest = async (message) => {
+    if (!game.user.isGM) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.GMOnly"));
+      return;
+    }
+
+    const msg = message?.id ? message : game.messages.get(message);
+    const current = msg?.flags?.[MODULE_ID];
+    if (!current?.request) {
+      ui.notifications.error(game.i18n.localize("RR.Notif.CantReadData"));
+      return;
+    }
+    if (current.locked) return msg;
+
+    RollRequestChat.cancelResultCallback(msg.id);
+    RollRequestChat.cancelPendingResult(msg.id);
+
+    await msg.update({
+      [`flags.${MODULE_ID}.locked`]: true,
+      content: await RollRequestChat._rebuildCardContent({ ...current, locked: true }),
+    });
+    return msg;
+  };
+
+  /**
    * Replace a card's `description` slot and re-render it in place.
    *
    * The card's HTML lives in message.content, rebuilt from flags, so setting the
@@ -250,10 +291,12 @@ Hooks.once("ready", () => {
    * Programmatically create a roll request chat card.
    *
    * @param {object} options
-   * @param {string} options.type        - "ability", "save", "skill", or "dice"
+   * @param {string} options.type        - "ability", "save", "skill", or "dice". Optional when
+   *   `selectFromTable` is set (nothing is rolled), where it defaults to "dice".
    * @param {string} options.key         - The key for the check (e.g. "str", "ref", "per"). For
    *   type "dice" this is a roll formula — any valid one, not just a bare die ("2d6+2", "2d4-2").
    *   Validated at request time so a bad formula fails here rather than on a player's click.
+   *   Optional (and unused) when `selectFromTable` is set.
    * @param {string} [options.name]      - Display name (auto-resolved from key if omitted)
    * @param {string} [options.mode="multi"]       - "single", "multi", or "targeted". "targeted"
    *   pins specific tokens to the card (see targetedActors) instead of letting any player roll.
@@ -287,7 +330,23 @@ Hooks.once("ready", () => {
    *   is GM-only (the table itself still shows), so it can't leak a total shown to players as "?".
    * @param {boolean} [options.clampTable=false]  - Trim the displayed table's open ends to the
    *   formula's own reachable range ("≤0" → "0", "5+" → "5–6" for 2d4-2). Off by default: a table
-   *   whose formula can only reach part of it still renders in full.
+   *   whose formula can only reach part of it still renders in full. Ignored on a selection
+   *   request, which has no formula to clamp to.
+   * @param {boolean} [options.selectFromTable=false] - Replace the roll with a choice. Requires a
+   *   `resultTable`: clicking the card's button opens a dropdown of its rows, and the picked row
+   *   becomes the result — recorded, displayed, and highlighted in `showTable` exactly as a rolled
+   *   one would be. Works in every mode. The stored `total` is the chosen row's threshold, so
+   *   `onResult` / `awaitResult` consumers still get a number the table maps back to; the entry
+   *   also carries `selectedIndex` and `selectedLabel`. `type` and `key` become optional, Aid
+   *   Another and `clampTable` are forced off, and `autoRoll` / Roll All are unavailable — a
+   *   selection is a person's choice, so there is nothing to fire on their behalf. A pick is final
+   *   unless `allowRepick` says otherwise.
+   * @param {boolean} [options.allowRepick=false] - Selection requests only: let a choice be changed
+   *   for as long as the card is up. The button stays live after a pick; clicking it again reopens
+   *   the dropdown on the current choice and replaces it. Limited to the slot that clicker already
+   *   filled — their own token in single/multi, in targeted the target they may roll for — so no
+   *   one can overwrite another's choice. onResult therefore fires again for that actor, while
+   *   awaitResult still resolves on the first pick only. Ignored without `selectFromTable`.
    * @param {string} [options.summaryKey]         - Key of a summary formatter registered via
    *   game.pf1RollRequests.registerSummary(). Renders a live aggregate line into the card, recomputed
    *   on each roll. Player visibility follows showResults. Currently displayed in multi-check cards.
@@ -309,7 +368,8 @@ Hooks.once("ready", () => {
    *   returns a Promise that resolves with the result. Otherwise returns the created ChatMessage —
    *   a handle for reading flags, correlating with onResult / the pf1RollRequests.rollComplete
    *   hook, or later closing the card with closeRequest(). Returns undefined only when the request
-   *   was rejected (bad type, invalid formula, empty targetedActors, non-GM caller).
+   *   was rejected (bad type, invalid formula, empty targetedActors, selectFromTable without a
+   *   resultTable, non-GM caller).
    *
    * @example
    * // Request a Perception skill check, DC 15, public roll with results hidden
@@ -325,6 +385,15 @@ Hooks.once("ready", () => {
    *   type: "skill", key: "dip", dc: 20, mode: "single", awaitResult: true,
    * });
    * if (result) console.log(`${result.actorName} rolled ${result.total} — ${result.passed ? "passed" : "failed"}`);
+   *
+   * @example
+   * // Selection instead of a roll — the player picks a row rather than rolling for it
+   * const message = await game.pf1RollRequests.createRequest({
+   *   mode: "single", flavor: "Choose your watch",
+   *   selectFromTable: true, showTable: true,
+   *   resultTable: [{ label: "First watch" }, { min: 1, label: "Second watch" }, { min: 2, label: "Third watch" }],
+   *   onResult: ({ result }) => console.log(`${result.actorName} chose ${result.selectedLabel}`),
+   * });
    */
   game.pf1RollRequests.createRequest = async (options = {}) => {
     if (!game.user.isGM) {
@@ -332,8 +401,18 @@ Hooks.once("ready", () => {
       return;
     }
 
-    const { type, key } = options;
-    if (!type || !key) {
+    // A selection request swaps the roll for a dropdown of the result table's
+    // rows, so it needs a table to choose from but neither a check nor a formula
+    // to roll — both become optional and default to an unused "dice" request.
+    const selectFromTable = options.selectFromTable ?? false;
+    if (selectFromTable && options.resultTable == null) {
+      ui.notifications.error(game.i18n.localize("RR.Notif.SelectNeedsTable"));
+      return;
+    }
+
+    const type = options.type ?? (selectFromTable ? "dice" : null);
+    const key = options.key ?? (selectFromTable ? "" : null);
+    if (!type || (!key && !selectFromTable)) {
       ui.notifications.error(game.i18n.localize("RR.Notif.CreateRequestParams"));
       return;
     }
@@ -346,7 +425,7 @@ Hooks.once("ready", () => {
 
     // For "dice" the key is a roll formula. Validate it here so a typo fails on
     // the GM's request rather than on whichever player clicks the roll button.
-    if (type === "dice" && !Roll.validate(key)) {
+    if (type === "dice" && !selectFromTable && !Roll.validate(key)) {
       ui.notifications.error(game.i18n.format("RR.Notif.InvalidFormula", { formula: key }));
       return;
     }
@@ -374,7 +453,8 @@ Hooks.once("ready", () => {
     }
 
     const showTable = resultTable ? (options.showTable ?? false) : false;
-    const clampTable = resultTable ? (options.clampTable ?? false) : false;
+    // Clamping describes what a formula can reach; a selection has no formula.
+    const clampTable = (resultTable && !selectFromTable) ? (options.clampTable ?? false) : false;
 
     // Clamping trims the table's open ends to what the formula can actually
     // roll. Resolved once here rather than on every re-render.
@@ -405,6 +485,8 @@ Hooks.once("ready", () => {
         name = key;
       }
     }
+    // A selection request may carry no key at all, leaving nothing to name it by.
+    if (!name && selectFromTable) name = options.flavor || game.i18n.localize("RR.Select.Title");
 
     const mode = options.mode ?? "multi";
     // A mapped result has no numeric pass/fail, so a DC would be meaningless —
@@ -414,7 +496,13 @@ Hooks.once("ready", () => {
     const showResults = options.showResults ?? false;
     const rollMode = options.rollMode ?? "roll";
     const flavor = options.flavor ?? "";
-    const includeAid = (type === "dice" || type === "save") ? false : (options.includeAid ?? true);
+    // Opt-in: a selection is final unless the request says it can be changed.
+    const allowRepick = selectFromTable ? (options.allowRepick ?? false) : false;
+
+    // Aid Another modifies a roll; a selection has none to modify.
+    const includeAid = (type === "dice" || type === "save" || selectFromTable)
+      ? false
+      : (options.includeAid ?? true);
     const targetedActors = options.targetedActors ?? [];
 
     if (mode === "targeted" && targetedActors.length === 0) {
@@ -449,6 +537,9 @@ Hooks.once("ready", () => {
       showTable,
       clampTable,
       tableBounds,
+      selectFromTable,
+      allowRepick,
+      locked: false,
       summaryKey: options.summaryKey ?? null,
       rolledActors: {},
       aidResults: {},
@@ -460,7 +551,12 @@ Hooks.once("ready", () => {
     };
 
     const awaitResult = options.awaitResult ?? false;
-    const autoRoll = (mode === "targeted") ? (options.autoRoll ?? false) : false;
+    // Every result on a selection card is somebody's deliberate choice, so there
+    // is nothing to fire on their behalf.
+    if (selectFromTable && options.autoRoll) {
+      console.warn(`${MODULE_ID} | autoRoll ignored: a selection request has no roll to auto-fire.`);
+    }
+    const autoRoll = (mode === "targeted" && !selectFromTable) ? (options.autoRoll ?? false) : false;
     const message = await RollRequestChat.createChatCard(requestData);
 
     // Streaming callback: invoked on every roll on this card (any mode). Lets

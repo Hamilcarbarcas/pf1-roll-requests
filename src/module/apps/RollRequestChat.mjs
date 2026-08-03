@@ -167,18 +167,120 @@ export class RollRequestChat {
   }
 
   /**
-   * The label a total maps to on a result table, or null when there is no table
-   * or the total falls outside every row.
+   * The table row a result entry belongs to. A selection knows its own row, so
+   * it is taken at its word; a roll resolves through its total as usual. The two
+   * only disagree on a degenerate table where rows share a threshold, and there
+   * the pick is what the card should report.
    *
+   * @param {object} entry           - A stored result entry.
    * @param {object[]|null} resultTable
-   * @param {number} total
+   * @returns {number} Row index, or -1 for no match.
+   */
+  static _entryRowIndex(entry, resultTable) {
+    const i = entry?.selectedIndex;
+    if (Number.isInteger(i) && resultTable?.[i]) return i;
+    return RollRequestChat._tableRowIndex(resultTable, entry?.total);
+  }
+
+  /**
+   * The label a result entry displays — what replaces the number on the card —
+   * or null when there is no table or the entry maps to no row.
+   *
+   * @param {object} entry
+   * @param {object[]|null} resultTable
    * @returns {string|null}
    */
-  static _resolveTableLabel(resultTable, total) {
-    const i = RollRequestChat._tableRowIndex(resultTable, total);
+  static _resolveEntryLabel(entry, resultTable) {
+    const i = RollRequestChat._entryRowIndex(entry, resultTable);
     if (i === -1) return null;
     const label = resultTable[i]?.label;
     return (label == null || label === "") ? null : String(label);
+  }
+
+  /**
+   * The numeric total a table row stands for — what a *selection* of that row
+   * records as its result, so every display path can keep resolving the label
+   * from a number exactly as it does for a real roll.
+   *
+   * Rows are thresholds, so a row's own `min` is the value that maps back to it.
+   * The open-ended lowest row has no `min`, so it borrows the value just below
+   * the next row's (or 0 when it is the only row).
+   *
+   * @param {object[]} table
+   * @param {number} index
+   * @returns {number|null}
+   */
+  static _tableRowTotal(table, index) {
+    const row = table?.[index];
+    if (!row) return null;
+    if (Number.isFinite(row.min)) return row.min;
+    const nextMin = Number.isFinite(table[index + 1]?.min) ? table[index + 1].min : null;
+    return nextMin != null ? nextMin - 1 : 0;
+  }
+
+  /**
+   * Ask the clicker to pick a row of the card's result table, standing in for
+   * the roll on a `selectFromTable` request. Returns the chosen row's index,
+   * label, and the numeric total it records, or null if the dialog was
+   * dismissed (treated exactly like cancelling a roll dialog).
+   *
+   * Labels render unescaped on the card, so any markup in them is flattened to
+   * plain text for the dropdown; a row with no visible label is not offered.
+   *
+   * @param {object} flags - The card's current flag state.
+   * @param {object|null} [existing] - The entry being changed, if this slot has
+   *   already been picked; its row opens as the dropdown's current value.
+   * @returns {Promise<{index: number, label: string, total: number}|null>}
+   */
+  static async _promptTableSelection(flags, existing = null) {
+    const table = flags.resultTable ?? [];
+    const choices = [];
+    for (let i = 0; i < table.length; i++) {
+      const scratch = document.createElement("div");
+      scratch.innerHTML = String(table[i]?.label ?? "");
+      const text = scratch.textContent.trim();
+      if (text) choices.push({ index: i, text });
+    }
+    if (!choices.length) {
+      ui.notifications.error(game.i18n.localize("RR.Notif.NoSelectionChoices"));
+      return null;
+    }
+
+    const currentIndex = Number.isInteger(existing?.selectedIndex) ? existing.selectedIndex : null;
+    const options = choices
+      .map((c) => `<option value="${c.index}"${c.index === currentIndex ? " selected" : ""}>`
+        + `${foundry.utils.escapeHTML(c.text)}</option>`)
+      .join("");
+    const content =
+      `<div style="margin-bottom:6px;">`
+      + game.i18n.localize(currentIndex != null ? "RR.Select.PromptChange" : "RR.Select.Prompt")
+      + `</div><select name="row" style="width:100%;">${options}</select>`;
+
+    let picked;
+    try {
+      picked = await foundry.applications.api.DialogV2.prompt({
+        window: { title: flags.flavor || flags.request?.name || game.i18n.localize("RR.Select.Title") },
+        content,
+        ok: {
+          label: game.i18n.localize(currentIndex != null ? "RR.Select.ConfirmChange" : "RR.Select.Confirm"),
+          icon: "fas fa-check",
+          callback: (_event, button) => button.form?.elements?.row?.value ?? null,
+        },
+        rejectClose: false,
+      });
+    } catch {
+      return null; // Dismissed
+    }
+    if (picked == null) return null;
+
+    const index = Number(picked);
+    const row = table[index];
+    if (!row) return null;
+    return {
+      index,
+      label: String(row.label ?? ""),
+      total: RollRequestChat._tableRowTotal(table, index),
+    };
   }
 
   /**
@@ -234,6 +336,9 @@ export class RollRequestChat {
 
     const bounds = flags.clampTable ? (flags.tableBounds ?? null) : null;
     const hideHitsFromPlayers = flags.rollMode === "publicblind";
+    // On a selection card the numbers behind the rows are bookkeeping, not
+    // outcomes anyone rolls for, so the range column is dropped entirely.
+    const hideRanges = !!flags.selectFromTable;
 
     // Bucket every result posted so far onto the row it landed on.
     const results = flags.mode === "targeted"
@@ -241,7 +346,7 @@ export class RollRequestChat {
       : Object.values(flags.rolledActors || {});
     const hits = new Map();
     for (const entry of results) {
-      const i = RollRequestChat._tableRowIndex(table, entry?.total);
+      const i = RollRequestChat._entryRowIndex(entry, table);
       if (i === -1) continue;
       if (!hits.has(i)) hits.set(i, []);
       hits.get(i).push(entry);
@@ -264,7 +369,7 @@ export class RollRequestChat {
       }
 
       return `<tr class="arr-table-row">`
-        + `<td class="arr-table-range">${range}</td>`
+        + (hideRanges ? "" : `<td class="arr-table-range">${range}</td>`)
         + `<td class="arr-table-label">${row?.label ?? ""}</td>`
         + `<td class="arr-table-hits">${hitHtml}</td>`
         + `</tr>`;
@@ -305,6 +410,8 @@ export class RollRequestChat {
       modeName,
       targetedActors: requestData.targetedActors ?? [],
       isSaveRequest: requestData.isSaveRequest ?? false,
+      isSelection: requestData.selectFromTable ?? false,
+      locked: requestData.locked ?? false,
       checkKindLabel: RollRequestChat._getCheckKindLabel(requestData),
       description: requestData.description ?? "",
       tableHtml: RollRequestChat._renderResultTable(requestData),
@@ -593,21 +700,25 @@ export class RollRequestChat {
         }
 
         if ((flags.targetedActors?.length ?? 0) > 1) {
-          // Roll All / Roll NPCs bulk buttons at top of card body
-          const bulkBtns = document.createElement("div");
-          bulkBtns.className = "arr-save-bulk-btns flexrow";
-          bulkBtns.innerHTML =
-            `<button type="button" class="arr-save-sel-btn" data-bulk="all">${game.i18n.localize("RR.Bulk.RollAll")}</button>` +
-            `<button type="button" class="arr-save-sel-btn" data-bulk="npcs">${game.i18n.localize("RR.Bulk.RollNPCs")}</button>`;
-          const body = card.querySelector(".arr-card-body");
-          if (body) body.insertBefore(bulkBtns, body.firstChild);
-          else card.prepend(bulkBtns);
-          bulkBtns.querySelectorAll("[data-bulk]").forEach(btn => {
-            btn.addEventListener("click", async (e) => {
-              e.preventDefault();
-              await RollRequestChat._bulkRollSave(message, btn.dataset.bulk);
+          // Roll All / Roll NPCs bulk buttons at top of card body. A locked card
+          // accepts no further results, so they are omitted — the token-selection
+          // footer below still is, since selecting tokens is not a result.
+          if (!flags.locked) {
+            const bulkBtns = document.createElement("div");
+            bulkBtns.className = "arr-save-bulk-btns flexrow";
+            bulkBtns.innerHTML =
+              `<button type="button" class="arr-save-sel-btn" data-bulk="all">${game.i18n.localize("RR.Bulk.RollAll")}</button>` +
+              `<button type="button" class="arr-save-sel-btn" data-bulk="npcs">${game.i18n.localize("RR.Bulk.RollNPCs")}</button>`;
+            const body = card.querySelector(".arr-card-body");
+            if (body) body.insertBefore(bulkBtns, body.firstChild);
+            else card.prepend(bulkBtns);
+            bulkBtns.querySelectorAll("[data-bulk]").forEach(btn => {
+              btn.addEventListener("click", async (e) => {
+                e.preventDefault();
+                await RollRequestChat._bulkRollSave(message, btn.dataset.bulk);
+              });
             });
-          });
+          }
 
           // Select All / Passed / Failed footer
           const selectFooter = document.createElement("div");
@@ -632,8 +743,9 @@ export class RollRequestChat {
       RollRequestChat._bindTargetedExpand(card, flags);
     }
 
-    // Blind-roll targeted (non-save): GM-only Roll All button
-    if (game.user.isGM && flags.rollMode === "blindroll" && !flags.isSaveRequest) {
+    // Blind-roll targeted (non-save): GM-only Roll All button. A selection card
+    // has no roll to bulk-fire — every result is somebody's deliberate choice.
+    if (game.user.isGM && flags.rollMode === "blindroll" && !flags.isSaveRequest && !flags.selectFromTable && !flags.locked) {
       const bulkBtns = document.createElement("div");
       bulkBtns.className = "arr-save-bulk-btns flexrow";
       bulkBtns.innerHTML = `<button type="button" class="arr-save-sel-btn">${game.i18n.localize("RR.Bulk.RollAll")}</button>`;
@@ -777,6 +889,13 @@ export class RollRequestChat {
       return;
     }
 
+    // A locked card accepts nothing further (API: lockRequest). Its buttons are
+    // already gone, so this only catches a click racing the re-render.
+    if (currentFlags.locked) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.RequestLocked"));
+      return;
+    }
+
     const request = currentFlags.request;
     const dc = currentFlags.dc;
 
@@ -831,8 +950,22 @@ export class RollRequestChat {
       return;
     }
 
+    // --- Changing an existing selection (allowRepick requests only) ---
+    // Where the request allows it, clicking again reopens the dropdown and the
+    // new pick replaces the old one. This is confined to the slot the clicker
+    // already filled — their own token in single/multi, and in targeted the
+    // target whose ownership was checked above — so it never overwrites
+    // somebody else's choice.
+    const existingSelection = (currentFlags.selectFromTable && currentFlags.allowRepick)
+      ? (rollType === "targeted"
+        ? currentFlags.actorResults?.[targetActorId]
+        : currentFlags.rolledActors?.[tokenId])
+      : null;
+
     // --- Duplicate / one-action-per-actor checks ---
-    if (rollType === "multi") {
+    if (existingSelection) {
+      // Skipped: this click is a change to that slot, not a second action.
+    } else if (rollType === "multi") {
       const rolledActors = currentFlags.rolledActors || {};
       const aidResults = currentFlags.aidResults || {};
       if (rolledActors[tokenId] || aidResults[tokenId]) {
@@ -870,6 +1003,33 @@ export class RollRequestChat {
         ui.notifications.warn(game.i18n.format("RR.Notif.AlreadyUsedAction", { name: actor.name }));
         return;
       }
+    }
+
+    // --- Selection instead of a roll ---
+    // On a selectFromTable card the clicker picks a row of the result table and
+    // that choice *is* the result. No dice are involved, so the roll-side
+    // validations (trained-only, natural-20 feasibility) and Dice So Nice have
+    // nothing to act on; the entry carries no rollData, which every display path
+    // already treats as "no expandable details".
+    if (currentFlags.selectFromTable) {
+      const chosen = await RollRequestChat._promptTableSelection(currentFlags, existingSelection);
+      if (!chosen) return; // Dialog dismissed
+
+      await RollRequestChat._commitResult(message, rollType, {
+        tokenId,
+        actorId: actor.id,
+        resultKey: rollType === "targeted" ? targetActorId : actor.id,
+        actorName: actor.name,
+        actorImg: actor.img,
+        total: chosen.total,
+        formula: null,
+        naturalRoll: null,
+        rollData: null,
+        notes: [],
+        selectedIndex: chosen.index,
+        selectedLabel: chosen.label,
+      }, currentFlags, opts);
+      return;
     }
 
     // --- Validation: Trained-only check ---
@@ -982,7 +1142,15 @@ export class RollRequestChat {
       }
     }
 
-    // Send update via socket (if not GM) or update directly
+    await RollRequestChat._commitResult(message, rollType, resultEntry, currentFlags, opts);
+  }
+
+  // ----------------------------------------------------------
+  // Post a finished result to the card: applied directly by a GM, handed to one
+  // over the socket by anyone else (only the GM writes to the message).
+  // ----------------------------------------------------------
+
+  static async _commitResult(message, rollType, resultEntry, currentFlags, opts = {}) {
     if (game.user.isGM) {
       await RollRequestChat._updateMessage(message, rollType, resultEntry, currentFlags, opts);
     } else {
@@ -1450,6 +1618,8 @@ export class RollRequestChat {
       modeName,
       targetedActors: flags.targetedActors ?? [],
       isSaveRequest: flags.isSaveRequest ?? false,
+      isSelection: flags.selectFromTable ?? false,
+      locked: flags.locked ?? false,
       checkKindLabel: RollRequestChat._getCheckKindLabel(flags),
       description: flags.description ?? "",
       tableHtml: RollRequestChat._renderResultTable(flags),
@@ -1587,7 +1757,7 @@ export class RollRequestChat {
               : '<i class="fas fa-times arr-fail-icon gm-only"></i>';
           }
           // A result table replaces the number with its mapped label (see _buildResultHTML)
-          const tableLabel = RollRequestChat._resolveTableLabel(flags.resultTable, result.total);
+          const tableLabel = RollRequestChat._resolveEntryLabel(result, flags.resultTable);
           const shownTotal = tableLabel ?? result.total;
           const labelClass = tableLabel ? " arr-total-label" : "";
           const totalHtml = hideTotalFromPlayers
@@ -1624,7 +1794,8 @@ export class RollRequestChat {
             }
           }
         }
-        if (rollBtn) rollBtn.style.display = "none";
+        // Kept visible where the pick can still be changed.
+        if (rollBtn && !(flags.selectFromTable && flags.allowRepick)) rollBtn.style.display = "none";
       }
 
       // Aid results for this actor's section
@@ -1658,7 +1829,7 @@ export class RollRequestChat {
 
     // With a result table the row shows the mapped label instead of the number;
     // the real roll and formula stay one click away in the expandable details.
-    const tableLabel = RollRequestChat._resolveTableLabel(resultTable, entry.total);
+    const tableLabel = RollRequestChat._resolveEntryLabel(entry, resultTable);
 
     let notesHtml = "";
     if (entry.notes?.length) {
@@ -1790,7 +1961,7 @@ export class RollRequestChat {
 
     // With a result table the row shows the mapped label instead of the number
     // (see _buildResultHTML, which does the same for the stored card content).
-    const tableLabel = RollRequestChat._resolveTableLabel(resultTable, entry.total);
+    const tableLabel = RollRequestChat._resolveEntryLabel(entry, resultTable);
     const shownTotal = tableLabel ?? entry.total;
     const labelClass = tableLabel ? " arr-total-label" : "";
 
@@ -1944,7 +2115,7 @@ export class RollRequestChat {
 
         // Inline primary result
         if (actorResults[actorId]) {
-          await RollRequestChat._setInlineResult(block, actorResults[actorId], flags.dc, flags.showResults, hideTotalFromPlayers, flags.resultTable);
+          await RollRequestChat._setInlineResult(block, actorResults[actorId], flags.dc, flags.showResults, hideTotalFromPlayers, flags.resultTable, !!(flags.selectFromTable && flags.allowRepick));
         }
 
         // Aid results
@@ -2029,7 +2200,7 @@ export class RollRequestChat {
   // Set inline result on a targeted actor's header row (live DOM path)
   // ----------------------------------------------------------
 
-  static async _setInlineResult(block, result, dc, showResults, hideTotalFromPlayers = false, resultTable = null) {
+  static async _setInlineResult(block, result, dc, showResults, hideTotalFromPlayers = false, resultTable = null, keepRollButton = false) {
     const inlineDiv = block.querySelector('.arr-inline-result');
     const rollBtn = block.querySelector('.arr-roll-btn[data-action="rollTargeted"]');
     if (!inlineDiv) return;
@@ -2040,7 +2211,7 @@ export class RollRequestChat {
     const showTotal = !hideTotalFromPlayers || game.user.isGM;
 
     // With a result table the row shows the mapped label instead of the number
-    const tableLabel = RollRequestChat._resolveTableLabel(resultTable, result.total);
+    const tableLabel = RollRequestChat._resolveEntryLabel(result, resultTable);
     const shownTotal = tableLabel ?? result.total;
     const labelClass = tableLabel ? " arr-total-label" : "";
 
@@ -2084,7 +2255,8 @@ export class RollRequestChat {
       if (actorRow) actorRow.style.cursor = 'pointer';
     }
 
-    if (rollBtn) rollBtn.style.display = "none";
+    // Kept visible where the pick can still be changed.
+    if (rollBtn && !keepRollButton) rollBtn.style.display = "none";
   }
 
   // ----------------------------------------------------------
@@ -2112,6 +2284,10 @@ export class RollRequestChat {
   // ----------------------------------------------------------
 
   static _updateButtonVisibility(card, flags) {
+    // A re-pickable selection card keeps its button live: the control that
+    // opens the dropdown has to survive making a choice with it.
+    if (flags.selectFromTable && flags.allowRepick) return;
+
     if (flags.mode === "single") {
       const rolledActors = flags.rolledActors || {};
       if (Object.keys(rolledActors).length > 0) {
@@ -2301,6 +2477,12 @@ export class RollRequestChat {
     if (!game.user.isGM) return;
     const initialFlags = message.flags?.[MODULE_ID];
     if (!initialFlags?.targetedActors?.length) return;
+    // Nothing to roll on a selection card: each result is a choice a person
+    // makes, so there is no sensible value to fill in on their behalf.
+    if (initialFlags.selectFromTable) {
+      console.warn(`${MODULE_ID} | Bulk roll skipped: card ${message.id} is a selection request.`);
+      return;
+    }
 
     for (const target of initialFlags.targetedActors) {
       const currentFlags = message.flags?.[MODULE_ID];
