@@ -29,7 +29,7 @@ export class SocketHandler {
     }
   }
 
-  static async _handleRollResult({ messageId, rollType, targetActorId, resultEntry }) {
+  static async _handleRollResult({ messageId, rollType, targetActorId, isRepick, resultEntry }) {
     const message = game.messages.get(messageId);
     if (!message) {
       console.warn(`${MODULE_ID} | Message ${messageId} not found`);
@@ -42,6 +42,6 @@ export class SocketHandler {
       return;
     }
 
-    await RollRequestChat._updateMessage(message, rollType, resultEntry, flags, { targetActorId });
+    await RollRequestChat._updateMessage(message, rollType, resultEntry, flags, { targetActorId, isRepick });
   }
 }

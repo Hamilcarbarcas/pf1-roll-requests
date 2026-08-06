@@ -25,6 +25,8 @@
   "RR.Common.Cancel": "Cancel",
   "RR.Common.NoEligibleActors": "No eligible actors.",
   "RR.Common.NpcOnScene": "Player-owned NPC on this scene",
+  "RR.Common.SelectAll": "Select All",
+  "RR.Common.SelectNone": "Select None",
   "RR.ActorPlaceholder": "Actor",
 
   "RR.Notif.GMOnly": "Only the GM can create roll requests.",
@@ -52,6 +54,7 @@
   "RR.Notif.AlreadyUsedAction": "{name} has already used their action in this request.",
   "RR.Notif.RequestLocked": "This request is closed — no further results can be recorded.",
   "RR.Notif.AlreadyProvidedAid": "{name} has already provided aid.",
+  "RR.Notif.RollInProgress": "A roll for {name} is already in progress on this request.",
   "RR.Notif.PrimaryAlreadyRolled": "The primary check has already been rolled.",
   "RR.Notif.TrainedOnly": "{name} cannot roll {check} — it requires training and they have no ranks.",
   "RR.Notif.CannotAidImpossible": "{name}: Success not possible, unable to aid another.",

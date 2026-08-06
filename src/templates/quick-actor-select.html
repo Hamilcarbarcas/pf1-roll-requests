@@ -3,7 +3,7 @@
     <div class="arr-actor-check-list">
         {{#each actors}}
         <label class="arr-actor-check-label flexrow">
-            <input type="checkbox" class="arr-actor-checkbox" data-actor-id="{{this.id}}" checked />
+            <input type="checkbox" class="arr-actor-checkbox" data-actor-id="{{this.id}}" />
             <img src="{{this.img}}" class="arr-actor-check-img" alt="{{this.name}}" />
             <span class="arr-actor-check-name">{{this.name}}</span>
             {{#if (eq this.source "npc")}}<i class="fa-solid fa-paw arr-actor-npc-icon" title="{{localize "RR.Common.NpcOnScene"}}"></i>{{/if}}
@@ -12,4 +12,14 @@
         <span class="arr-no-actors-msg">{{localize "RR.Common.NoEligibleActors"}}</span>
         {{/each}}
     </div>
+    {{#if actors.length}}
+    <div class="arr-quick-select-bulk flexrow">
+        <button type="button" class="arr-bulk-select" data-select="all">
+            <i class="fa-solid fa-check-double"></i> {{localize "RR.Common.SelectAll"}}
+        </button>
+        <button type="button" class="arr-bulk-select" data-select="none">
+            <i class="fa-regular fa-square"></i> {{localize "RR.Common.SelectNone"}}
+        </button>
+    </div>
+    {{/if}}
 </div>

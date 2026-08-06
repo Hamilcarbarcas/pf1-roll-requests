@@ -285,7 +285,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
   /**
    * Show a popup to pick which actors a quick action prompts. Uses the same
-   * actor list as the main Prompt Actors checklist, all selected by default.
+   * actor list as the main Prompt Actors checklist, all unchecked by default,
+   * with Select All / Select None shortcuts.
    *
    * @param {string} label - The quick action's label (for the title).
    * @returns {Promise<string[]|null>} Selected actor ids, or null if cancelled.
@@ -320,6 +321,15 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
         },
         { action: "cancel", label: game.i18n.localize("RR.Common.Cancel"), icon: "fas fa-times" },
       ],
+      render: (_event, dialog) => {
+        // Select All / Select None shortcuts under the list.
+        dialog.element.querySelectorAll(".arr-bulk-select").forEach(button => {
+          button.addEventListener("click", () => {
+            const checked = button.dataset.select === "all";
+            dialog.element.querySelectorAll(".arr-actor-checkbox").forEach(cb => { cb.checked = checked; });
+          });
+        });
+      },
       rejectClose: false,
     });
 

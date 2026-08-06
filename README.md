@@ -105,7 +105,7 @@ An optional **Quick Actions** category at the bottom of the options grid holds c
 
 Available Quick Actions:
 
-- **Spot Checks** — prompts a Perception check from selected actors. Opens an actor picker (the same list as Prompt Actors, all selected by default), then posts a **public** request card whose roll totals are hidden from players (the GM sees them), with no DC and no Aid Another.
+- **Spot Checks** — prompts a Perception check from selected actors. Opens an actor picker (the same list as Prompt Actors, nothing checked to start, with **Select All** / **Select None** buttons below the list), then posts a **public** request card whose roll totals are hidden from players (the GM sees them), with no DC and no Aid Another.
 - **Monster Lore** — opens the Monster Lore window (see below) instead of posting a card directly, and closes the Roll Request dialog.
 
 Custom quick actions can be made via the mod API.

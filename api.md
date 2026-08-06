@@ -283,7 +283,7 @@ game.pf1RollRequests.registerQuickAction({
 });
 ```
 
-The three actor-passing modes are mutually ordered: `promptActors` (show picker) takes precedence, then `allActors` (send everyone), otherwise `actors` is `null`.
+The three actor-passing modes are mutually ordered: `promptActors` (show picker) takes precedence, then `allActors` (send everyone), otherwise `actors` is `null`. The picker opens with nothing checked and offers **Select All** / **Select None** buttons; cancelling it, or confirming with an empty selection, aborts the quick action without invoking the callback.
 
 - Register during the `ready` hook (or later) so `game.pf1RollRequests` exists.
 - The `callback` may be async; it is awaited, and the dialog is closed afterward only if `closeOnUse` is `true` (you can also call `app.close()` yourself at any time).

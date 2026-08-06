@@ -19,6 +19,13 @@ export class RollRequestChat {
   // socket) apply strictly one-at-a-time, each reading freshly-committed flags.
   static _updateQueues = new Map();
 
+  // Slots currently mid-roll on this client (slot key → { warned }). A card's
+  // "already rolled" checks read the message flags, which only catch up *after*
+  // a result is committed — so without this, every click landing before the
+  // first roll resolves passes those checks and posts its own result. See
+  // _acquireSlot.
+  static _inFlight = new Map();
+
   // ----------------------------------------------------------
   // Summary formatter registry (public API)
   // A registered formatter renders an aggregate line into the card and is
@@ -547,28 +554,46 @@ export class RollRequestChat {
   }
 
   // ----------------------------------------------------------
+  // Bind a roll button to the roll handler
+  //
+  // The button is marked busy for as long as its click is being handled, so a
+  // second click while the dialog is open reads as "still working" rather than
+  // as a button that did nothing. The slot lock in _handleRoll is what actually
+  // enforces one result per slot — this is its visible half, and it stops a
+  // burst of clicks on one button before they reach the handler at all.
+  // ----------------------------------------------------------
+
+  static _bindBusyClick(btn, handler) {
+    btn.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (btn.dataset.busy) return;
+      btn.dataset.busy = "1";
+      btn.classList.add("arr-btn-busy");
+      try {
+        await handler(ev);
+      } finally {
+        delete btn.dataset.busy;
+        btn.classList.remove("arr-btn-busy");
+      }
+    });
+  }
+
+  static _bindRollButton(btn, message, flags, rollType, opts = {}) {
+    RollRequestChat._bindBusyClick(btn, () => RollRequestChat._handleRoll(message, flags, rollType, opts));
+  }
+
+  // ----------------------------------------------------------
   // Multi-Check: bind the roll button
   // ----------------------------------------------------------
 
   static _bindMultiCheck(message, card, flags) {
     const rollBtn = card.querySelector('.arr-roll-btn[data-action="roll"]');
-    if (rollBtn) {
-      rollBtn.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        await RollRequestChat._handleRoll(message, flags, "multi");
-      });
-    }
+    if (rollBtn) RollRequestChat._bindRollButton(rollBtn, message, flags, "multi");
 
     if (flags.includeAid) {
       const aidBtn = card.querySelector('.arr-roll-btn[data-action="rollMultiAid"]');
-      if (aidBtn) {
-        aidBtn.addEventListener("click", async (ev) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          await RollRequestChat._handleRoll(message, flags, "multiAid");
-        });
-      }
+      if (aidBtn) RollRequestChat._bindRollButton(aidBtn, message, flags, "multiAid");
       RollRequestChat._updateAidDisplay(card, flags, false, flags.aidTotal || 0);
     }
   }
@@ -580,23 +605,11 @@ export class RollRequestChat {
   static _bindSingleCheck(message, card, flags) {
     // Aid Another button
     const aidBtn = card.querySelector('.arr-roll-btn[data-action="rollAid"]');
-    if (aidBtn) {
-      aidBtn.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        await RollRequestChat._handleRoll(message, flags, "aid");
-      });
-    }
+    if (aidBtn) RollRequestChat._bindRollButton(aidBtn, message, flags, "aid");
 
     // Primary Roll button
     const primaryBtn = card.querySelector('.arr-roll-btn[data-action="rollPrimary"]');
-    if (primaryBtn) {
-      primaryBtn.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        await RollRequestChat._handleRoll(message, flags, "primary");
-      });
-    }
+    if (primaryBtn) RollRequestChat._bindRollButton(primaryBtn, message, flags, "primary");
 
     // Update aid bonus display
     RollRequestChat._updateAidDisplay(card, flags);
@@ -624,21 +637,13 @@ export class RollRequestChat {
         btn.classList.add("arr-roll-btn-disabled");
       }
 
-      btn.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        await RollRequestChat._handleRoll(message, flags, "targeted", { targetActorId });
-      });
+      RollRequestChat._bindRollButton(btn, message, flags, "targeted", { targetActorId });
     });
 
     // Aid buttons — one per targeted actor's section, usable by anyone
     card.querySelectorAll('.arr-roll-btn[data-action="rollTargetedAid"]').forEach(btn => {
       const targetActorId = btn.dataset.targetActorId;
-      btn.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        await RollRequestChat._handleRoll(message, flags, "targetedAid", { targetActorId });
-      });
+      RollRequestChat._bindRollButton(btn, message, flags, "targetedAid", { targetActorId });
     });
 
     // Initialise aid bonus displays
@@ -713,10 +718,7 @@ export class RollRequestChat {
             if (body) body.insertBefore(bulkBtns, body.firstChild);
             else card.prepend(bulkBtns);
             bulkBtns.querySelectorAll("[data-bulk]").forEach(btn => {
-              btn.addEventListener("click", async (e) => {
-                e.preventDefault();
-                await RollRequestChat._bulkRollSave(message, btn.dataset.bulk);
-              });
+              RollRequestChat._bindBusyClick(btn, () => RollRequestChat._bulkRollSave(message, btn.dataset.bulk));
             });
           }
 
@@ -752,10 +754,10 @@ export class RollRequestChat {
       const body = card.querySelector(".arr-card-body");
       if (body) body.insertBefore(bulkBtns, body.firstChild);
       else card.prepend(bulkBtns);
-      bulkBtns.querySelector("button").addEventListener("click", async (e) => {
-        e.preventDefault();
-        await RollRequestChat._bulkRollTargeted(message);
-      });
+      RollRequestChat._bindBusyClick(
+        bulkBtns.querySelector("button"),
+        () => RollRequestChat._bulkRollTargeted(message)
+      );
     }
   }
 
@@ -876,10 +878,150 @@ export class RollRequestChat {
   }
 
   // ----------------------------------------------------------
+  // Concurrency guard
+  //
+  // A roll is not instantaneous — the dialog, the roll itself and (for a
+  // player) the socket round-trip to the GM all sit between the click and the
+  // moment the result appears in the card's flags. Every duplicate check in
+  // _handleRoll reads those flags, so a second click arriving inside that
+  // window sees a card nobody has rolled on yet and rolls again, overwriting
+  // the first result. These helpers hold a lock on the *slot* a click is about
+  // to fill, from the click until the result is visibly committed.
+  // ----------------------------------------------------------
+
+  /**
+   * The identity of the "slot" a roll fills — the unit the card's own duplicate
+   * checks are expressed in. Two clicks that would land in the same slot share
+   * a key and must not run concurrently; anything else is free to proceed.
+   *
+   * Mirrors the checks in _handleRoll: a single-check card has one primary slot
+   * however many tokens are around; multi cards allow one action (roll *or*
+   * aid) per token; targeted cards spend one action per actor id, whether that
+   * actor rolled for itself or aided someone else.
+   *
+   * @param {string} messageId
+   * @param {string} rollType
+   * @param {{tokenId?: string, actorId?: string, targetActorId?: string}} ids
+   * @returns {string|null} Key, or null when the roll type has no slot to lock.
+   */
+  static _slotKey(messageId, rollType, { tokenId, actorId, targetActorId } = {}) {
+    switch (rollType) {
+      case "primary":     return `${messageId}:primary`;
+      case "aid":         return `${messageId}:aid:${tokenId}`;
+      case "multi":
+      case "multiAid":    return `${messageId}:action:${tokenId}`;
+      case "targeted":    return `${messageId}:used:${targetActorId}`;
+      case "targetedAid": return `${messageId}:used:${actorId}`;
+      default:            return null;
+    }
+  }
+
+  /**
+   * Whether a card's committed state already fills the slot a result targets.
+   * The counterpart to _slotKey: same rules, asked of the flags rather than of
+   * the click.
+   *
+   * @param {object} flags - The card's current flag state.
+   * @param {string} rollType
+   * @param {{tokenId?: string, actorId?: string, targetActorId?: string}} ids
+   * @returns {boolean}
+   */
+  static _isSlotFilled(flags, rollType, { tokenId, actorId, targetActorId } = {}) {
+    switch (rollType) {
+      case "primary":     return Object.keys(flags.rolledActors || {}).length > 0;
+      // One action per token, spent by rolling *or* aiding — as in _handleRoll.
+      case "multi":
+      case "multiAid":    return !!(flags.rolledActors || {})[tokenId] || !!(flags.aidResults || {})[tokenId];
+      case "aid":         return !!(flags.aidResults || {})[tokenId];
+      case "targeted":    return (flags.usedActorIds || []).includes(targetActorId);
+      case "targetedAid": return (flags.usedActorIds || []).includes(actorId);
+      default:            return false;
+    }
+  }
+
+  /**
+   * Claim a slot for the click now being handled. Returns false when another
+   * click already holds it, in which case the caller must abort.
+   *
+   * Only the first rejected click notifies: a double-click is usually just an
+   * impatient one, and five stacked warnings say nothing the first didn't.
+   *
+   * @param {string|null} key
+   * @param {string} actorName - Named in the notification.
+   * @returns {boolean} True when the slot was claimed by this call.
+   */
+  static _acquireSlot(key, actorName) {
+    if (!key) return true;
+    const held = RollRequestChat._inFlight.get(key);
+    if (held) {
+      if (!held.warned) {
+        held.warned = true;
+        ui.notifications.warn(game.i18n.format("RR.Notif.RollInProgress", { name: actorName }));
+      }
+      return false;
+    }
+    RollRequestChat._inFlight.set(key, { warned: false });
+    return true;
+  }
+
+  /**
+   * Release a slot once the card's flags actually show the result.
+   *
+   * A GM's own update is already committed by the time _commitResult returns,
+   * so this usually releases immediately. A player's result went out over the
+   * socket and lands a round-trip later — holding the lock across that gap is
+   * what stops a follow-up click from passing duplicate checks on flags that
+   * have not caught up yet. A repick, which overwrites a slot that is already
+   * filled, also releases at once; the lock has already done its job by
+   * holding across the dialog.
+   *
+   * The timeout is a backstop: a socket message the GM never processes (nobody
+   * connected, an error on their side) must not jam the slot for the session.
+   *
+   * @param {ChatMessage} message
+   * @param {string} key
+   * @param {string} rollType
+   * @param {object} ids - As passed to _slotKey.
+   */
+  static _releaseWhenCommitted(message, key, rollType, ids) {
+    const filled = (doc) => RollRequestChat._isSlotFilled(doc.flags?.[MODULE_ID] ?? {}, rollType, ids);
+    if (filled(message)) {
+      RollRequestChat._inFlight.delete(key);
+      return;
+    }
+
+    let timeout;
+    const release = () => {
+      Hooks.off("updateChatMessage", hookId);
+      clearTimeout(timeout);
+      RollRequestChat._inFlight.delete(key);
+    };
+    const hookId = Hooks.on("updateChatMessage", (doc) => {
+      if (doc.id === message.id && filled(doc)) release();
+    });
+    timeout = setTimeout(release, 15000);
+  }
+
+  // ----------------------------------------------------------
   // Core Roll Handler
   // ----------------------------------------------------------
 
-  static async _handleRoll(message, _flags, rollType, opts = {}) {
+  /**
+   * Entry point for every roll button. Wraps the real handler so the slot lock
+   * it claims is always released — held until the result is committed, dropped
+   * straight away when the click bailed out (cancelled dialog, failed
+   * validation, error).
+   */
+  static async _handleRoll(message, flags, rollType, opts = {}) {
+    const gate = { release: null, committed: false };
+    try {
+      return await RollRequestChat._handleRollInner(message, flags, rollType, opts, gate);
+    } finally {
+      gate.release?.(gate.committed);
+    }
+  }
+
+  static async _handleRollInner(message, _flags, rollType, opts = {}, gate = {}) {
     const { targetActorId } = opts;
 
     // Re-read flags from the message to get the latest state
@@ -1005,6 +1147,21 @@ export class RollRequestChat {
       }
     }
 
+    // --- Claim this slot for the duration of the roll ---
+    // The checks above only see results that are already committed; this covers
+    // the click-to-commit window they can't. Everything up to here is
+    // synchronous from the click handler, so a burst of clicks reaches this
+    // point one at a time and only the first gets through.
+    const ids = { tokenId, actorId: actor.id, targetActorId };
+    const slotKey = RollRequestChat._slotKey(message.id, rollType, ids);
+    if (!RollRequestChat._acquireSlot(slotKey, actor.name)) return;
+    gate.release = (committed) => {
+      if (!slotKey) return;
+      if (committed) RollRequestChat._releaseWhenCommitted(message, slotKey, rollType, ids);
+      else RollRequestChat._inFlight.delete(slotKey);
+    };
+    const isRepick = !!existingSelection;
+
     // --- Selection instead of a roll ---
     // On a selectFromTable card the clicker picks a row of the result table and
     // that choice *is* the result. No dice are involved, so the roll-side
@@ -1028,7 +1185,8 @@ export class RollRequestChat {
         notes: [],
         selectedIndex: chosen.index,
         selectedLabel: chosen.label,
-      }, currentFlags, opts);
+      }, currentFlags, { ...opts, isRepick });
+      gate.committed = true;
       return;
     }
 
@@ -1142,7 +1300,8 @@ export class RollRequestChat {
       }
     }
 
-    await RollRequestChat._commitResult(message, rollType, resultEntry, currentFlags, opts);
+    await RollRequestChat._commitResult(message, rollType, resultEntry, currentFlags, { ...opts, isRepick });
+    gate.committed = true;
   }
 
   // ----------------------------------------------------------
@@ -1159,6 +1318,7 @@ export class RollRequestChat {
         messageId: message.id,
         rollType,
         targetActorId: opts.targetActorId ?? null,
+        isRepick: opts.isRepick ?? false,
         resultEntry,
       });
     }
@@ -1464,6 +1624,27 @@ export class RollRequestChat {
     // Re-read flags now (after any prior queued update has committed) so this
     // update builds on the latest state rather than a snapshot taken at enqueue.
     const flags = message.flags?.[MODULE_ID] ?? {};
+
+    // Authoritative duplicate guard — the last word on whether a slot is
+    // already spoken for. The client that rolled checked too, but against its
+    // own view of the card: a player's result crosses the socket, so their view
+    // is a round-trip old, and two clients eligible for the same slot (any
+    // player on a single-check card, a GM and an owner on a targeted one) can
+    // each believe they are first. This runs GM-side inside the per-message
+    // queue on freshly committed flags, where neither is possible.
+    //
+    // A repick is a deliberate overwrite of the clicker's own slot, so it is
+    // the one write allowed to land on an occupied one.
+    const reject = (reason) => console.warn(
+      `${MODULE_ID} | Discarded ${rollType} result for ${resultEntry?.actorName} on message ${message.id}: ${reason}.`
+    );
+    if (flags.locked) return void reject("request is closed");
+    if (!opts.isRepick && RollRequestChat._isSlotFilled(flags, rollType, {
+      tokenId: resultEntry.tokenId,
+      actorId: resultEntry.actorId,
+      targetActorId: targetActorId ?? resultEntry.resultKey ?? resultEntry.actorId,
+    })) return void reject("slot already has a result");
+
     const updateData = {};
 
     if (rollType === "multi") {

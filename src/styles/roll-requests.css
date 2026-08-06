@@ -810,6 +810,23 @@
   margin: 0 0 6px;
 }
 
+/* Select All / Select None shortcuts under the actor list */
+.arr-quick-select-bulk {
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--color-border-light-tertiary, #999);
+}
+
+.arr-quick-select-bulk .arr-bulk-select {
+  flex: 1;
+  font-size: 11px;
+  line-height: 18px;
+  height: auto;
+  padding: 1px 4px;
+  white-space: nowrap;
+}
+
 /* ============================================================
    Chat Card — Targeted Mode
    ============================================================ */
@@ -865,6 +882,14 @@
 .arr-roll-btn-disabled {
   opacity: 0.3;
   pointer-events: none;
+}
+
+/* A roll this button started is still resolving — no second click until it lands.
+   The click is swallowed by the handler rather than by pointer-events, so it
+   can't fall through to the row-expand binding underneath. */
+.arr-btn-busy {
+  opacity: 0.5;
+  cursor: progress;
 }
 
 /* Expand roll details in targeted blocks */
