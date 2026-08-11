@@ -11,7 +11,9 @@ export class RollRequestChat {
   // Pending result promises for awaitResult API (messageId → { resolve })
   static _pendingResults = new Map();
 
-  // Streaming result callbacks for the onResult API (messageId → callback)
+  // Streaming result callbacks for the onResult API (callback key → callback).
+  // Keyed by _callbackKey so a whole-card request and each embedded one on the
+  // same message keep their own stream.
   static _resultCallbacks = new Map();
 
   // Per-message serialization chains (messageId → Promise). Ensures concurrent
@@ -19,12 +21,74 @@ export class RollRequestChat {
   // socket) apply strictly one-at-a-time, each reading freshly-committed flags.
   static _updateQueues = new Map();
 
-  // Slots currently mid-roll on this client (slot key → { warned }). A card's
-  // "already rolled" checks read the message flags, which only catch up *after*
-  // a result is committed — so without this, every click landing before the
-  // first roll resolves passes those checks and posts its own result. See
-  // _acquireSlot.
+  // Roll slots currently mid-roll on this client (roll-slot key → { warned }). A
+  // card's "already rolled" checks read the message flags, which only catch up
+  // *after* a result is committed — so without this, every click landing before
+  // the first roll resolves passes those checks and posts its own result. See
+  // _acquireRollSlot.
   static _inFlight = new Map();
+
+  // ----------------------------------------------------------
+  // Embedded requests
+  //
+  // A request can live either as a whole card of its own (the normal case,
+  // state at flags.<MODULE_ID>) or *embedded* inside a card another module
+  // owns, with its own state at flags.<MODULE_ID>.embeds.<slot>. An embedded
+  // request never reads or writes message.content — the host owns that — so it
+  // is rendered explicitly into a caller-supplied element by renderEmbed().
+  //
+  // Two different things are called a "slot" around here; keep them apart:
+  //   * an **embed slot** — one embedded request's key on a host card. Always
+  //     the parameter named `slot` below, and `null` for a whole-card request.
+  //   * a **roll slot** — the unit a single result fills (one token's action,
+  //     one target's save). See _rollSlotKey.
+  // ----------------------------------------------------------
+
+  /**
+   * The flag state a request reads and writes: the message's own flag scope for
+   * a whole-card request, or one embed's sub-object when a slot is given.
+   *
+   * @param {ChatMessage} message
+   * @param {string|null} [slot] - Embed slot, or null for the whole card.
+   * @returns {object|null} The state, or null when there is none.
+   */
+  static _readState(message, slot = null) {
+    const flags = message?.flags?.[MODULE_ID];
+    if (!flags) return null;
+    if (!slot) return flags;
+    return flags.embeds?.[slot] ?? null;
+  }
+
+  /**
+   * The dotted document-update path for one key of a request's flag scope.
+   *
+   * @param {string|null} slot
+   * @param {string} key
+   * @returns {string}
+   */
+  static _statePath(slot, key) {
+    return slot
+      ? `flags.${MODULE_ID}.embeds.${slot}.${key}`
+      : `flags.${MODULE_ID}.${key}`;
+  }
+
+  /**
+   * Identity of one request for per-client bookkeeping (roll-slot locks). A
+   * message may carry a whole-card request and several embedded ones, each of
+   * which fills its roll slots independently.
+   *
+   * @param {string} messageId
+   * @param {string|null} [slot]
+   * @returns {string}
+   */
+  static _scopeId(messageId, slot = null) {
+    return slot ? `${messageId}#${slot}` : messageId;
+  }
+
+  /** Key under which a request's streaming onResult callback is registered. */
+  static _callbackKey(messageId, slot = null) {
+    return slot ? `${messageId}#${slot}` : messageId;
+  }
 
   // ----------------------------------------------------------
   // Summary formatter registry (public API)
@@ -389,44 +453,48 @@ export class RollRequestChat {
   // Create and post the chat card
   // ----------------------------------------------------------
 
-  static async createChatCard(requestData) {
-    let template;
-    if (requestData.mode === "single") {
-      template = `modules/${MODULE_ID}/src/templates/chat-card-single.html`;
-    } else if (requestData.mode === "targeted") {
-      template = `modules/${MODULE_ID}/src/templates/chat-card-targeted.html`;
-    } else {
-      template = `modules/${MODULE_ID}/src/templates/chat-card-multi.html`;
-    }
+  /** The card template a request's mode renders through. */
+  static _cardTemplate(mode) {
+    if (mode === "single") return `modules/${MODULE_ID}/src/templates/chat-card-single.html`;
+    if (mode === "targeted") return `modules/${MODULE_ID}/src/templates/chat-card-targeted.html`;
+    return `modules/${MODULE_ID}/src/templates/chat-card-multi.html`;
+  }
 
-    // Build the display name for the request
-    const requestName = requestData.request.name;
-    const name = requestData.flavor || requestName;
-
-    // Roll mode display name (shown in GM-only footer)
-    const modeName = RollRequestChat._getModeName(requestData.rollMode, requestData.showResults);
-
-    const templateData = {
-      name,
+  /**
+   * The template context for a request's card, derived wholly from its flag
+   * state. Shared by the three paths that draw a card: the initial post, the
+   * content rebuild after a roll, and renderEmbed.
+   *
+   * @param {object} flags - The request's current flag state.
+   * @returns {object}
+   */
+  static _templateData(flags) {
+    const requestName = flags.request.name;
+    return {
+      name: flags.flavor || requestName,
       requestName,
-      dc: requestData.dc,
-      showDC: requestData.showDC,
-      showResults: requestData.showResults,
-      flavor: requestData.flavor,
-      includeAid: requestData.includeAid,
-      modeName,
-      targetedActors: requestData.targetedActors ?? [],
-      isSaveRequest: requestData.isSaveRequest ?? false,
-      isSelection: requestData.selectFromTable ?? false,
-      locked: requestData.locked ?? false,
-      checkKindLabel: RollRequestChat._getCheckKindLabel(requestData),
-      description: requestData.description ?? "",
-      tableHtml: RollRequestChat._renderResultTable(requestData),
-      summaryHtml: RollRequestChat._renderSummary(requestData),
-      aggregateHtml: RollRequestChat._renderAggregate(requestData),
+      dc: flags.dc,
+      showDC: flags.showDC,
+      showResults: flags.showResults,
+      flavor: flags.flavor,
+      includeAid: flags.includeAid,
+      // Roll mode display name (shown in GM-only footer)
+      modeName: RollRequestChat._getModeName(flags.rollMode, flags.showResults),
+      targetedActors: flags.targetedActors ?? [],
+      isSaveRequest: flags.isSaveRequest ?? false,
+      isSelection: flags.selectFromTable ?? false,
+      locked: flags.locked ?? false,
+      checkKindLabel: RollRequestChat._getCheckKindLabel(flags),
+      description: flags.description ?? "",
+      tableHtml: RollRequestChat._renderResultTable(flags),
+      summaryHtml: RollRequestChat._renderSummary(flags),
+      aggregateHtml: RollRequestChat._renderAggregate(flags),
     };
+  }
 
-    const html = await renderTemplate(template, templateData);
+  static async createChatCard(requestData) {
+    const template = RollRequestChat._cardTemplate(requestData.mode);
+    const html = await renderTemplate(template, RollRequestChat._templateData(requestData));
 
     // Build the chat message
     const chatData = {
@@ -464,9 +532,40 @@ export class RollRequestChat {
   // ----------------------------------------------------------
 
   static async onRenderChatMessage(message, html, _data) {
-    const card = html.querySelector?.(".arr-card") ?? html[0]?.querySelector?.(".arr-card");
-    if (!card) return;
+    const root = html instanceof HTMLElement ? html : html?.[0];
 
+    // The whole-card request, if this message is one. Embedded cards are tagged
+    // by renderEmbed and excluded here: a host module may draw its block — and
+    // with it an embed — from a render hook that runs before this one, and that
+    // card is not this message's request.
+    const card = root?.querySelector?.(".arr-card:not([data-arr-embed])");
+    if (card) {
+      await RollRequestChat._activateCard(message, card, message.flags?.[MODULE_ID], null);
+    }
+
+    // Bind the standalone check button (mirrors PF1's native save button) that
+    // auto-generated skill/ability check cards carry in the preserved PF1 footer,
+    // outside .arr-card. Same behaviour as the save button: roll for the clicker's
+    // selected token(s) as a standalone PF1 roll card.
+    const checkBtn = root?.querySelector?.(".rr-check-button");
+    if (checkBtn && !checkBtn.dataset.bound) {
+      checkBtn.dataset.bound = "1";
+      checkBtn.addEventListener("click", (ev) => RollRequestChat._onCheckButton(ev));
+    }
+
+    // Embedded requests that asked us to place them (API: embed's `mount`).
+    await RollRequestChat._renderMountedEmbeds(message, root);
+  }
+
+  // ----------------------------------------------------------
+  // Turn a freshly-rendered card element into a live one: resolve per-viewer
+  // visibility, bind its buttons, and replay the results already in its flags.
+  //
+  // Shared by the whole-card render hook and renderEmbed, which differ only in
+  // where the element came from and which flag scope drives it.
+  // ----------------------------------------------------------
+
+  static async _activateCard(message, card, flags, slot = null) {
     // Remove GM-only elements for non-GMs; remove player-only elements for GMs
     if (game.user.isGM) {
       card.querySelectorAll(".arr-player-only").forEach(el => el.remove());
@@ -474,17 +573,20 @@ export class RollRequestChat {
       card.querySelectorAll(".gm-only").forEach(el => el.remove());
     }
 
-    const flags = message.flags?.[MODULE_ID];
     if (!flags || !flags.request) return;
+
+    // `controls: false` strips the card down to its rows, so an embedded request
+    // doesn't sit inside a host's card wearing a second card's chrome.
+    if (flags.controls === false) RollRequestChat._stripCardChrome(card);
 
     const mode = flags.mode;
 
     if (mode === "multi") {
-      RollRequestChat._bindMultiCheck(message, card, flags);
+      RollRequestChat._bindMultiCheck(message, card, flags, slot);
     } else if (mode === "single") {
-      RollRequestChat._bindSingleCheck(message, card, flags);
+      RollRequestChat._bindSingleCheck(message, card, flags, slot);
     } else if (mode === "targeted") {
-      RollRequestChat._bindTargetedCheck(message, card, flags);
+      RollRequestChat._bindTargetedCheck(message, card, flags, slot);
     }
 
     // Re-render results from flag data (await so DOM is populated before cleanup/binding)
@@ -505,16 +607,124 @@ export class RollRequestChat {
 
     // Bind click-to-expand on result rows
     RollRequestChat._bindExpandToggle(card);
+  }
 
-    // Bind the standalone check button (mirrors PF1's native save button) that
-    // auto-generated skill/ability check cards carry in the preserved PF1 footer,
-    // outside .arr-card. Same behaviour as the save button: roll for the clicker's
-    // selected token(s) as a standalone PF1 roll card.
-    const root = html instanceof HTMLElement ? html : html?.[0];
-    const checkBtn = root?.querySelector?.(".rr-check-button");
-    if (checkBtn && !checkBtn.dataset.bound) {
-      checkBtn.dataset.bound = "1";
-      checkBtn.addEventListener("click", (ev) => RollRequestChat._onCheckButton(ev));
+  /**
+   * Reduce a card to its rows: no title, no flavor, no GM mode footer. The DC
+   * chip survives on its own — a caller that asked for `showDC` meant it, and
+   * dropping the number with the rest of the header would silently ignore that.
+   *
+   * @param {HTMLElement} card
+   */
+  static _stripCardChrome(card) {
+    card.classList.add("arr-card-bare");
+    card.querySelector(".arr-flavor")?.remove();
+    card.querySelector(".arr-card-footer")?.remove();
+    const header = card.querySelector(".arr-card-header");
+    if (!header) return;
+    const title = header.querySelector(".arr-card-title");
+    // The lock rides in the title, and without it a closed request is just rows
+    // whose buttons have vanished — so it is kept even when the title goes.
+    const lock = title?.querySelector(".arr-locked-icon");
+    if (header.querySelector(".arr-dc-display") || lock) {
+      if (lock) header.insertBefore(lock, header.firstChild);
+      title?.remove();
+    } else {
+      header.remove();
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Embedded requests: rendering
+  // ----------------------------------------------------------
+
+  /**
+   * Render an embedded request into an element the caller owns, and bind it.
+   *
+   * Placement is the caller's, deliberately: a host calls this from its own
+   * render hook once its container exists, so there is no hook-ordering
+   * dependency between the two modules and no retry loop. Calling it again on a
+   * later draw simply replaces the widget. Nothing here reads or writes
+   * `message.content`.
+   *
+   * Safe to call from any client — a player's roll crosses the existing socket
+   * to the GM, who stays the only writer to the message.
+   *
+   * @param {ChatMessage} message
+   * @param {object} options
+   * @param {string} options.slot        - The embed slot, as passed to embed().
+   * @param {HTMLElement} options.into   - Container to render into; its contents
+   *   are replaced.
+   * @returns {Promise<HTMLElement|null>} The rendered card element, or null when
+   *   the slot holds no request (closed, or never embedded) — in which case the
+   *   container is emptied.
+   */
+  static async renderEmbed(message, { slot, into } = {}) {
+    if (!(into instanceof HTMLElement)) {
+      throw new Error(`${MODULE_ID} | renderEmbed requires an 'into' HTMLElement.`);
+    }
+    if (typeof slot !== "string" || !slot) {
+      throw new Error(`${MODULE_ID} | renderEmbed requires a non-empty string 'slot'.`);
+    }
+
+    const state = RollRequestChat._readState(message, slot);
+    if (!state?.request) {
+      into.replaceChildren();
+      return null;
+    }
+
+    const html = await renderTemplate(
+      RollRequestChat._cardTemplate(state.mode),
+      RollRequestChat._templateData(state)
+    );
+    const scratch = document.createElement("div");
+    scratch.innerHTML = html;
+    const card = scratch.querySelector(".arr-card");
+    if (!card) return null;
+
+    // Tag it so the whole-card render hook doesn't mistake it for the message's
+    // own request, and drop `chat-card` so it doesn't wear a second card's frame.
+    card.dataset.arrEmbed = slot;
+    card.classList.remove("chat-card");
+    card.classList.add("arr-embed");
+
+    await RollRequestChat._activateCard(message, card, state, slot);
+
+    into.replaceChildren(card);
+    return card;
+  }
+
+  /**
+   * Render every embed on a message that supplied a `mount` selector, resolved
+   * against the message's own rendered element.
+   *
+   * This is the convenience path for consumers that don't draw their card from
+   * flags: it runs on our render hook, so it only finds containers that already
+   * exist by then. A host that builds its block later — or rebuilds it — should
+   * call renderEmbed itself instead.
+   *
+   * @param {ChatMessage} message
+   * @param {HTMLElement} root - The message's rendered element.
+   */
+  static async _renderMountedEmbeds(message, root) {
+    const embeds = message?.flags?.[MODULE_ID]?.embeds;
+    if (!root || !embeds) return;
+
+    for (const [slot, state] of Object.entries(embeds)) {
+      if (!state?.mount || !state.request) continue;
+      let into;
+      try {
+        into = root.querySelector(state.mount);
+      } catch {
+        console.warn(`${MODULE_ID} | Embed '${slot}' has an invalid mount selector: ${state.mount}`);
+        continue;
+      }
+      if (!into) continue; // Nothing to mount into on this render — skip silently.
+      try {
+        await RollRequestChat.renderEmbed(message, { slot, into });
+      } catch (err) {
+        console.error(`${MODULE_ID} | Could not mount embed '${slot}':`, err);
+      }
     }
   }
 
@@ -587,13 +797,13 @@ export class RollRequestChat {
   // Multi-Check: bind the roll button
   // ----------------------------------------------------------
 
-  static _bindMultiCheck(message, card, flags) {
+  static _bindMultiCheck(message, card, flags, slot = null) {
     const rollBtn = card.querySelector('.arr-roll-btn[data-action="roll"]');
-    if (rollBtn) RollRequestChat._bindRollButton(rollBtn, message, flags, "multi");
+    if (rollBtn) RollRequestChat._bindRollButton(rollBtn, message, flags, "multi", { slot });
 
     if (flags.includeAid) {
       const aidBtn = card.querySelector('.arr-roll-btn[data-action="rollMultiAid"]');
-      if (aidBtn) RollRequestChat._bindRollButton(aidBtn, message, flags, "multiAid");
+      if (aidBtn) RollRequestChat._bindRollButton(aidBtn, message, flags, "multiAid", { slot });
       RollRequestChat._updateAidDisplay(card, flags, false, flags.aidTotal || 0);
     }
   }
@@ -602,14 +812,14 @@ export class RollRequestChat {
   // Single-Check: bind both buttons
   // ----------------------------------------------------------
 
-  static _bindSingleCheck(message, card, flags) {
+  static _bindSingleCheck(message, card, flags, slot = null) {
     // Aid Another button
     const aidBtn = card.querySelector('.arr-roll-btn[data-action="rollAid"]');
-    if (aidBtn) RollRequestChat._bindRollButton(aidBtn, message, flags, "aid");
+    if (aidBtn) RollRequestChat._bindRollButton(aidBtn, message, flags, "aid", { slot });
 
     // Primary Roll button
     const primaryBtn = card.querySelector('.arr-roll-btn[data-action="rollPrimary"]');
-    if (primaryBtn) RollRequestChat._bindRollButton(primaryBtn, message, flags, "primary");
+    if (primaryBtn) RollRequestChat._bindRollButton(primaryBtn, message, flags, "primary", { slot });
 
     // Update aid bonus display
     RollRequestChat._updateAidDisplay(card, flags);
@@ -619,7 +829,12 @@ export class RollRequestChat {
   // Targeted-Check: bind per-actor roll and aid buttons
   // ----------------------------------------------------------
 
-  static _bindTargetedCheck(message, card, flags) {
+  static _bindTargetedCheck(message, card, flags, slot = null) {
+    // Bulk action rows are for a card that is a fireball against six tokens. An
+    // embedded request is usually one target and one row, where they are four
+    // buttons that each do what that row already does (API: controls).
+    const showControls = flags.controls !== false;
+
     // Primary roll buttons — one per targeted actor
     card.querySelectorAll('.arr-roll-btn[data-action="rollTargeted"]').forEach(btn => {
       const targetActorId = btn.dataset.actorId;
@@ -637,13 +852,13 @@ export class RollRequestChat {
         btn.classList.add("arr-roll-btn-disabled");
       }
 
-      RollRequestChat._bindRollButton(btn, message, flags, "targeted", { targetActorId });
+      RollRequestChat._bindRollButton(btn, message, flags, "targeted", { targetActorId, slot });
     });
 
     // Aid buttons — one per targeted actor's section, usable by anyone
     card.querySelectorAll('.arr-roll-btn[data-action="rollTargetedAid"]').forEach(btn => {
       const targetActorId = btn.dataset.targetActorId;
-      RollRequestChat._bindRollButton(btn, message, flags, "targetedAid", { targetActorId });
+      RollRequestChat._bindRollButton(btn, message, flags, "targetedAid", { targetActorId, slot });
     });
 
     // Initialise aid bonus displays
@@ -704,7 +919,7 @@ export class RollRequestChat {
           });
         }
 
-        if ((flags.targetedActors?.length ?? 0) > 1) {
+        if (showControls && (flags.targetedActors?.length ?? 0) > 1) {
           // Roll All / Roll NPCs bulk buttons at top of card body. A locked card
           // accepts no further results, so they are omitted — the token-selection
           // footer below still is, since selecting tokens is not a result.
@@ -718,7 +933,7 @@ export class RollRequestChat {
             if (body) body.insertBefore(bulkBtns, body.firstChild);
             else card.prepend(bulkBtns);
             bulkBtns.querySelectorAll("[data-bulk]").forEach(btn => {
-              RollRequestChat._bindBusyClick(btn, () => RollRequestChat._bulkRollSave(message, btn.dataset.bulk));
+              RollRequestChat._bindBusyClick(btn, () => RollRequestChat._bulkRollSave(message, btn.dataset.bulk, slot));
             });
           }
 
@@ -733,7 +948,7 @@ export class RollRequestChat {
           selectFooter.querySelectorAll("[data-select]").forEach(btn => {
             btn.addEventListener("click", (e) => {
               e.preventDefault();
-              const currentFlags = message.flags?.[MODULE_ID];
+              const currentFlags = RollRequestChat._readState(message, slot);
               if (currentFlags) RollRequestChat._selectSaveTokens(currentFlags, btn.dataset.select);
             });
           });
@@ -747,7 +962,7 @@ export class RollRequestChat {
 
     // Blind-roll targeted (non-save): GM-only Roll All button. A selection card
     // has no roll to bulk-fire — every result is somebody's deliberate choice.
-    if (game.user.isGM && flags.rollMode === "blindroll" && !flags.isSaveRequest && !flags.selectFromTable && !flags.locked) {
+    if (showControls && game.user.isGM && flags.rollMode === "blindroll" && !flags.isSaveRequest && !flags.selectFromTable && !flags.locked) {
       const bulkBtns = document.createElement("div");
       bulkBtns.className = "arr-save-bulk-btns flexrow";
       bulkBtns.innerHTML = `<button type="button" class="arr-save-sel-btn">${game.i18n.localize("RR.Bulk.RollAll")}</button>`;
@@ -756,7 +971,7 @@ export class RollRequestChat {
       else card.prepend(bulkBtns);
       RollRequestChat._bindBusyClick(
         bulkBtns.querySelector("button"),
-        () => RollRequestChat._bulkRollTargeted(message)
+        () => RollRequestChat._bulkRollTargeted(message, { slot })
       );
     }
   }
@@ -890,43 +1105,45 @@ export class RollRequestChat {
   // ----------------------------------------------------------
 
   /**
-   * The identity of the "slot" a roll fills — the unit the card's own duplicate
-   * checks are expressed in. Two clicks that would land in the same slot share
-   * a key and must not run concurrently; anything else is free to proceed.
+   * The identity of the *roll slot* a click fills — the unit the card's own
+   * duplicate checks are expressed in. Two clicks that would land in the same
+   * roll slot share a key and must not run concurrently; anything else is free
+   * to proceed.
    *
    * Mirrors the checks in _handleRoll: a single-check card has one primary slot
    * however many tokens are around; multi cards allow one action (roll *or*
    * aid) per token; targeted cards spend one action per actor id, whether that
    * actor rolled for itself or aided someone else.
    *
-   * @param {string} messageId
+   * @param {string} scopeId - The request this click belongs to (_scopeId), so
+   *   two embedded requests on one message never share a lock.
    * @param {string} rollType
    * @param {{tokenId?: string, actorId?: string, targetActorId?: string}} ids
    * @returns {string|null} Key, or null when the roll type has no slot to lock.
    */
-  static _slotKey(messageId, rollType, { tokenId, actorId, targetActorId } = {}) {
+  static _rollSlotKey(scopeId, rollType, { tokenId, actorId, targetActorId } = {}) {
     switch (rollType) {
-      case "primary":     return `${messageId}:primary`;
-      case "aid":         return `${messageId}:aid:${tokenId}`;
+      case "primary":     return `${scopeId}:primary`;
+      case "aid":         return `${scopeId}:aid:${tokenId}`;
       case "multi":
-      case "multiAid":    return `${messageId}:action:${tokenId}`;
-      case "targeted":    return `${messageId}:used:${targetActorId}`;
-      case "targetedAid": return `${messageId}:used:${actorId}`;
+      case "multiAid":    return `${scopeId}:action:${tokenId}`;
+      case "targeted":    return `${scopeId}:used:${targetActorId}`;
+      case "targetedAid": return `${scopeId}:used:${actorId}`;
       default:            return null;
     }
   }
 
   /**
-   * Whether a card's committed state already fills the slot a result targets.
-   * The counterpart to _slotKey: same rules, asked of the flags rather than of
-   * the click.
+   * Whether a request's committed state already fills the roll slot a result
+   * targets. The counterpart to _rollSlotKey: same rules, asked of the flags
+   * rather than of the click.
    *
-   * @param {object} flags - The card's current flag state.
+   * @param {object} flags - The request's current flag state.
    * @param {string} rollType
    * @param {{tokenId?: string, actorId?: string, targetActorId?: string}} ids
    * @returns {boolean}
    */
-  static _isSlotFilled(flags, rollType, { tokenId, actorId, targetActorId } = {}) {
+  static _isRollSlotFilled(flags, rollType, { tokenId, actorId, targetActorId } = {}) {
     switch (rollType) {
       case "primary":     return Object.keys(flags.rolledActors || {}).length > 0;
       // One action per token, spent by rolling *or* aiding — as in _handleRoll.
@@ -940,8 +1157,8 @@ export class RollRequestChat {
   }
 
   /**
-   * Claim a slot for the click now being handled. Returns false when another
-   * click already holds it, in which case the caller must abort.
+   * Claim a roll slot for the click now being handled. Returns false when
+   * another click already holds it, in which case the caller must abort.
    *
    * Only the first rejected click notifies: a double-click is usually just an
    * impatient one, and five stacked warnings say nothing the first didn't.
@@ -950,7 +1167,7 @@ export class RollRequestChat {
    * @param {string} actorName - Named in the notification.
    * @returns {boolean} True when the slot was claimed by this call.
    */
-  static _acquireSlot(key, actorName) {
+  static _acquireRollSlot(key, actorName) {
     if (!key) return true;
     const held = RollRequestChat._inFlight.get(key);
     if (held) {
@@ -981,10 +1198,11 @@ export class RollRequestChat {
    * @param {ChatMessage} message
    * @param {string} key
    * @param {string} rollType
-   * @param {object} ids - As passed to _slotKey.
+   * @param {object} ids - As passed to _rollSlotKey.
+   * @param {string|null} [slot] - Embed slot the result belongs to.
    */
-  static _releaseWhenCommitted(message, key, rollType, ids) {
-    const filled = (doc) => RollRequestChat._isSlotFilled(doc.flags?.[MODULE_ID] ?? {}, rollType, ids);
+  static _releaseWhenCommitted(message, key, rollType, ids, slot = null) {
+    const filled = (doc) => RollRequestChat._isRollSlotFilled(RollRequestChat._readState(doc, slot) ?? {}, rollType, ids);
     if (filled(message)) {
       RollRequestChat._inFlight.delete(key);
       return;
@@ -1022,10 +1240,11 @@ export class RollRequestChat {
   }
 
   static async _handleRollInner(message, _flags, rollType, opts = {}, gate = {}) {
-    const { targetActorId } = opts;
+    const { targetActorId, slot = null } = opts;
 
-    // Re-read flags from the message to get the latest state
-    const currentFlags = message.flags?.[MODULE_ID];
+    // Re-read flags from the message to get the latest state. For an embedded
+    // request that is its own sub-object, not the message's flag scope.
+    const currentFlags = RollRequestChat._readState(message, slot);
     if (!currentFlags || !currentFlags.request) {
       ui.notifications.error(game.i18n.localize("RR.Notif.CantReadData"));
       return;
@@ -1153,12 +1372,13 @@ export class RollRequestChat {
     // synchronous from the click handler, so a burst of clicks reaches this
     // point one at a time and only the first gets through.
     const ids = { tokenId, actorId: actor.id, targetActorId };
-    const slotKey = RollRequestChat._slotKey(message.id, rollType, ids);
-    if (!RollRequestChat._acquireSlot(slotKey, actor.name)) return;
+    const rollSlotKey = RollRequestChat._rollSlotKey(
+      RollRequestChat._scopeId(message.id, slot), rollType, ids);
+    if (!RollRequestChat._acquireRollSlot(rollSlotKey, actor.name)) return;
     gate.release = (committed) => {
-      if (!slotKey) return;
-      if (committed) RollRequestChat._releaseWhenCommitted(message, slotKey, rollType, ids);
-      else RollRequestChat._inFlight.delete(slotKey);
+      if (!rollSlotKey) return;
+      if (committed) RollRequestChat._releaseWhenCommitted(message, rollSlotKey, rollType, ids, slot);
+      else RollRequestChat._inFlight.delete(rollSlotKey);
     };
     const isRepick = !!existingSelection;
 
@@ -1319,6 +1539,8 @@ export class RollRequestChat {
         rollType,
         targetActorId: opts.targetActorId ?? null,
         isRepick: opts.isRepick ?? false,
+        // Which request on the message this result belongs to; null = the card itself.
+        slot: opts.slot ?? null,
         resultEntry,
       });
     }
@@ -1620,10 +1842,10 @@ export class RollRequestChat {
   }
 
   static async _applyUpdate(message, rollType, resultEntry, opts = {}) {
-    const { targetActorId } = opts;
+    const { targetActorId, slot = null } = opts;
     // Re-read flags now (after any prior queued update has committed) so this
     // update builds on the latest state rather than a snapshot taken at enqueue.
-    const flags = message.flags?.[MODULE_ID] ?? {};
+    const flags = RollRequestChat._readState(message, slot) ?? {};
 
     // Authoritative duplicate guard — the last word on whether a slot is
     // already spoken for. The client that rolled checked too, but against its
@@ -1638,19 +1860,24 @@ export class RollRequestChat {
     const reject = (reason) => console.warn(
       `${MODULE_ID} | Discarded ${rollType} result for ${resultEntry?.actorName} on message ${message.id}: ${reason}.`
     );
+    // A slot whose embed has since been closed has no request left to record on.
+    if (!flags.request) return void reject("request no longer exists");
     if (flags.locked) return void reject("request is closed");
-    if (!opts.isRepick && RollRequestChat._isSlotFilled(flags, rollType, {
+    if (!opts.isRepick && RollRequestChat._isRollSlotFilled(flags, rollType, {
       tokenId: resultEntry.tokenId,
       actorId: resultEntry.actorId,
       targetActorId: targetActorId ?? resultEntry.resultKey ?? resultEntry.actorId,
     })) return void reject("slot already has a result");
 
-    const updateData = {};
+    // Changes are collected relative to the request's own flag scope, then
+    // written through _statePath — which is what lets one code path serve both a
+    // whole card and an embed several levels down in the same flags.
+    const changes = {};
 
     if (rollType === "multi") {
       const rolledActors = foundry.utils.deepClone(flags.rolledActors || {});
       rolledActors[resultEntry.tokenId] = resultEntry;
-      updateData[`flags.${MODULE_ID}.rolledActors`] = rolledActors;
+      changes.rolledActors = rolledActors;
 
       if (flags.includeAid) {
         // Mark all currently unredeemed aid entries as consumed and reset the pool
@@ -1658,67 +1885,65 @@ export class RollRequestChat {
         for (const entry of Object.values(aidResults)) {
           if (!entry.consumed) entry.consumed = true;
         }
-        updateData[`flags.${MODULE_ID}.aidResults`] = aidResults;
-        updateData[`flags.${MODULE_ID}.aidTotal`] = 0;
+        changes.aidResults = aidResults;
+        changes.aidTotal = 0;
       }
 
     } else if (rollType === "multiAid") {
       const aidResults = foundry.utils.deepClone(flags.aidResults || {});
       aidResults[resultEntry.tokenId] = resultEntry;
-      updateData[`flags.${MODULE_ID}.aidResults`] = aidResults;
-      const newAidTotal = (flags.aidTotal || 0) + (resultEntry.aidBonus || 0);
-      updateData[`flags.${MODULE_ID}.aidTotal`] = newAidTotal;
+      changes.aidResults = aidResults;
+      changes.aidTotal = (flags.aidTotal || 0) + (resultEntry.aidBonus || 0);
 
     } else if (rollType === "aid") {
       const aidResults = foundry.utils.deepClone(flags.aidResults || {});
       aidResults[resultEntry.tokenId] = resultEntry;
-      updateData[`flags.${MODULE_ID}.aidResults`] = aidResults;
-      updateData[`flags.${MODULE_ID}.aidTotal`] = RollRequestChat._calculateAidTotal({ aidResults });
+      changes.aidResults = aidResults;
+      changes.aidTotal = RollRequestChat._calculateAidTotal({ aidResults });
 
     } else if (rollType === "primary") {
       const rolledActors = foundry.utils.deepClone(flags.rolledActors || {});
       rolledActors[resultEntry.tokenId] = resultEntry;
-      updateData[`flags.${MODULE_ID}.rolledActors`] = rolledActors;
+      changes.rolledActors = rolledActors;
 
     } else if (rollType === "targeted") {
       const actorResults = foundry.utils.deepClone(flags.actorResults || {});
       const resultKey = resultEntry.resultKey ?? resultEntry.actorId;
       actorResults[resultKey] = resultEntry;
-      updateData[`flags.${MODULE_ID}.actorResults`] = actorResults;
+      changes.actorResults = actorResults;
 
       const usedActorIds = [...(flags.usedActorIds || [])];
       if (!usedActorIds.includes(resultKey)) usedActorIds.push(resultKey);
-      updateData[`flags.${MODULE_ID}.usedActorIds`] = usedActorIds;
+      changes.usedActorIds = usedActorIds;
 
     } else if (rollType === "targetedAid") {
       const actorAidResults = foundry.utils.deepClone(flags.actorAidResults || {});
       if (!actorAidResults[targetActorId]) actorAidResults[targetActorId] = {};
       actorAidResults[targetActorId][resultEntry.actorId] = resultEntry;
-      updateData[`flags.${MODULE_ID}.actorAidResults`] = actorAidResults;
+      changes.actorAidResults = actorAidResults;
 
       const usedActorIds = [...(flags.usedActorIds || [])];
       if (!usedActorIds.includes(resultEntry.actorId)) usedActorIds.push(resultEntry.actorId);
-      updateData[`flags.${MODULE_ID}.usedActorIds`] = usedActorIds;
+      changes.usedActorIds = usedActorIds;
     }
 
-    // Rebuild the card HTML content with results included
-    const updatedFlags = foundry.utils.mergeObject(
-      foundry.utils.deepClone(flags),
-      Object.fromEntries(
-        Object.entries(updateData)
-          .map(([k, v]) => [k.replace(`flags.${MODULE_ID}.`, ""), v])
-      )
-    );
-    const newContent = await RollRequestChat._rebuildCardContent(updatedFlags);
+    const updatedFlags = foundry.utils.mergeObject(foundry.utils.deepClone(flags), changes);
 
-    await message.update({
-      content: newContent,
-      ...updateData,
-    });
+    const updateData = {};
+    for (const [key, value] of Object.entries(changes)) {
+      updateData[RollRequestChat._statePath(slot, key)] = value;
+    }
+    // An embedded request never touches message.content — the host owns it, and
+    // rewriting it would freeze whatever the host had injected at render time.
+    // The flag write alone re-renders the message, which is all the host needs.
+    if (!slot) updateData.content = await RollRequestChat._rebuildCardContent(updatedFlags);
+
+    await message.update(updateData);
 
     // Fire hook for every roll result
     Hooks.callAll("pf1RollRequests.rollComplete", {
       messageId: message.id,
+      slot,
       rollType,
       result: resultEntry,
       flags: updatedFlags,
@@ -1727,13 +1952,15 @@ export class RollRequestChat {
     // Invoke the streaming onResult callback (if any) with a normalized,
     // best-of-ready payload: every primary entry so far, each with a computed
     // pass/fail, plus the entry just rolled.
-    const resultCallback = RollRequestChat._resultCallbacks.get(message.id);
+    const resultCallback = RollRequestChat._resultCallbacks.get(
+      RollRequestChat._callbackKey(message.id, slot));
     if (resultCallback) {
       const dc = updatedFlags.dc;
       const withPass = (e) => ({ ...e, passed: dc != null ? e.total >= dc : null });
       try {
         resultCallback({
           messageId: message.id,
+          slot,
           rollType,
           result: withPass(resultEntry),
           results: Object.values(updatedFlags.rolledActors || {}).map(withPass),
@@ -1745,8 +1972,10 @@ export class RollRequestChat {
       }
     }
 
-    // Resolve pending promise for single-check primary rolls
-    if (rollType === "primary" && updatedFlags.mode === "single") {
+    // Resolve pending promise for single-check primary rolls. Embeds have no
+    // awaitResult — a Promise held on one client dies on reload — so this is
+    // whole-card only.
+    if (!slot && rollType === "primary" && updatedFlags.mode === "single") {
       const pending = RollRequestChat._pendingResults.get(message.id);
       if (pending) {
         const dc = updatedFlags.dc;
@@ -2534,13 +2763,14 @@ export class RollRequestChat {
   }
 
   /**
-   * Register a streaming result callback for a chat message, invoked on every
-   * roll completed on that card (see the onResult option of createRequest).
+   * Register a streaming result callback for a request, invoked on every roll
+   * completed on it (see the onResult option of createRequest / embed).
    * @param {string} messageId
    * @param {(payload: object) => void} callback
+   * @param {string|null} [slot] - Embed slot, or null for the whole card.
    */
-  static registerResultCallback(messageId, callback) {
-    RollRequestChat._resultCallbacks.set(messageId, callback);
+  static registerResultCallback(messageId, callback, slot = null) {
+    RollRequestChat._resultCallbacks.set(RollRequestChat._callbackKey(messageId, slot), callback);
   }
 
   /**
@@ -2552,16 +2782,19 @@ export class RollRequestChat {
    * @param {string} messageId
    * @param {string|null} [reason]  Why the stream ended (e.g. "deleted"). Omit
    *   for a silent unregister.
-   * @param {number|null} [dc]      The card's DC, carried through for parity with
-   *   normal result payloads.
+   * @param {number|null} [dc]      The request's DC, carried through for parity
+   *   with normal result payloads.
+   * @param {string|null} [slot]    Embed slot, or null for the whole card.
    */
-  static cancelResultCallback(messageId, reason = null, dc = null) {
-    const callback = RollRequestChat._resultCallbacks.get(messageId);
-    RollRequestChat._resultCallbacks.delete(messageId);
+  static cancelResultCallback(messageId, reason = null, dc = null, slot = null) {
+    const key = RollRequestChat._callbackKey(messageId, slot);
+    const callback = RollRequestChat._resultCallbacks.get(key);
+    RollRequestChat._resultCallbacks.delete(key);
     if (callback && reason) {
       try {
         callback({
           messageId,
+          slot,
           rollType: "cancelled",
           reason,
           result: null,
@@ -2572,6 +2805,25 @@ export class RollRequestChat {
       } catch (err) {
         console.error(`${MODULE_ID} | onResult terminal callback threw:`, err);
       }
+    }
+  }
+
+  /**
+   * Cancel every stream on a message — its own request and each embedded one —
+   * each with its own DC. Used when the message goes away entirely.
+   *
+   * @param {ChatMessage|string} message - The message, or its ID (in which case
+   *   it is looked up; a deleted message must be passed as the document).
+   * @param {string|null} [reason]
+   */
+  static cancelMessageCallbacks(message, reason = null) {
+    const doc = typeof message === "string" ? game.messages.get(message) : message;
+    const id = typeof message === "string" ? message : message?.id;
+    if (!id) return;
+    const flags = doc?.flags?.[MODULE_ID] ?? {};
+    RollRequestChat.cancelResultCallback(id, reason, flags.dc ?? null, null);
+    for (const [slot, state] of Object.entries(flags.embeds ?? {})) {
+      RollRequestChat.cancelResultCallback(id, reason, state?.dc ?? null, slot);
     }
   }
 
@@ -2603,13 +2855,13 @@ export class RollRequestChat {
   // Bulk-roll saves for all unrolled targets (GM only, no dialog)
   // ----------------------------------------------------------
 
-  static async _bulkRollSave(message, which) {
+  static async _bulkRollSave(message, which, slot = null) {
     if (!game.user.isGM) return;
-    const flags = message.flags?.[MODULE_ID];
+    const flags = RollRequestChat._readState(message, slot);
     if (!flags?.isSaveRequest) return;
 
     for (const target of (flags.targetedActors || [])) {
-      const currentFlags = message.flags?.[MODULE_ID];
+      const currentFlags = RollRequestChat._readState(message, slot);
       if (!currentFlags) break;
       if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
 
@@ -2646,7 +2898,7 @@ export class RollRequestChat {
         notes,
       };
 
-      await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id });
+      await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id, slot });
     }
   }
 
@@ -2654,9 +2906,9 @@ export class RollRequestChat {
   // Bulk roll for targeted blind-roll cards (non-save)
   // ----------------------------------------------------------
 
-  static async _bulkRollTargeted(message) {
+  static async _bulkRollTargeted(message, { slot = null } = {}) {
     if (!game.user.isGM) return;
-    const initialFlags = message.flags?.[MODULE_ID];
+    const initialFlags = RollRequestChat._readState(message, slot);
     if (!initialFlags?.targetedActors?.length) return;
     // Nothing to roll on a selection card: each result is a choice a person
     // makes, so there is no sensible value to fill in on their behalf.
@@ -2666,7 +2918,7 @@ export class RollRequestChat {
     }
 
     for (const target of initialFlags.targetedActors) {
-      const currentFlags = message.flags?.[MODULE_ID];
+      const currentFlags = RollRequestChat._readState(message, slot);
       if (!currentFlags) break;
       if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
 
@@ -2705,7 +2957,7 @@ export class RollRequestChat {
         notes,
       };
 
-      await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id });
+      await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id, slot });
     }
   }
 }

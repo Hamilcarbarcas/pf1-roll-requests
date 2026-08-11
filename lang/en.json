@@ -36,6 +36,7 @@
   "RR.Notif.InvalidFormula": "Invalid roll formula \"{formula}\".",
   "RR.Notif.ResultTableInvalid": "createRequest 'resultTable' must be a non-empty array of { min, label } rows.",
   "RR.Notif.SelectNeedsTable": "createRequest 'selectFromTable' requires a 'resultTable' to choose from.",
+  "RR.Notif.EmbedSlotInvalid": "embed requires a 'slot' of letters, digits, underscores or hyphens (no dots).",
   "RR.Notif.NoSelectionChoices": "This request's table has no labelled rows to choose from.",
   "RR.Notif.ActorExcluded": "{name} excluded from the roll-request prompt list.",
   "RR.Notif.SelectAtLeastOne": "Please select at least one actor to prompt.",

@@ -57,7 +57,7 @@ Each `targetedActors` entry requires only `id` (the token document ID). All othe
 | `img` | `tokenDoc.texture.src` (falls back to actor portrait) | Show a different portrait |
 | `isHidden` | `tokenDoc.hidden` | Force a token visible or hidden on the card regardless of its canvas state |
 
-`game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place.
+`game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place. Pass `{ slot }` as a second argument to roll an [embedded request](#embedded-requests) instead of the card itself.
 
 Passing `autoRoll: true` to `createRequest` does the same thing one step earlier — the card is posted and every target rolled before the call resolves, so the returned message's flags already carry the full results. Use `bulkRollTargeted` instead when you need to do something between posting the card and rolling it. Both are GM-side and dialog-free: the rolls execute on the GM's client regardless of who owns the token, which is also what **Roll All** does.
 
@@ -85,6 +85,8 @@ await game.pf1RollRequests.lockRequest(message);
 Leaves the card exactly where it is and stops it accepting input. The roll and selection buttons disappear, a lock appears beside the title, and a click that races the re-render is refused with a notification. Use it where the card is worth keeping as a visible record — a re-pickable selection whose choices are now final, for instance.
 
 Like `closeRequest` it unregisters the `onResult` stream first, so a locked request never delivers the terminal `cancelled` event. Any unresolved `awaitResult` promise resolves `null`, since the roll it was waiting on can no longer happen. Locking is one-way and idempotent; a locked card that is later deleted behaves like any other deleted message.
+
+It also closes every [embedded request](#embedded-requests) on the card, and accepts a message that carries only embeds and no request of its own.
 
 | | `closeRequest` | `lockRequest` |
 |---|---|---|
@@ -340,6 +342,80 @@ await message.setFlag("pf1-roll-requests", "excludeTargets", [token.document.uui
 
 The motivating case is a thrown splash weapon: the token taking the direct hit is a genuine target of the action, but only the creatures caught in the burst roll the Reflex save.
 
+## Embedded requests
+
+A request normally *is* a card. It can instead be **embedded** — a live request placed inside a card another module owns, with neither module taking the other's card away from it.
+
+This is a second, separate mechanism from the auto-save request that converts PF1 attack cards. That one works by rewriting `message.content`, which is right for converting a *finished* card once, and wrong for a host that redraws its card from its own flags on every render: the host's injections get snapshotted into the stored content and replayed forever, stale, and there is room for exactly one request per message. An embedded request **never reads or writes `message.content`**. Its state lives at `flags["pf1-roll-requests"].embeds.<slot>`, and it is drawn explicitly into an element the host supplies.
+
+```js
+// GM-side. Creates the request state; renders nothing by itself.
+await game.pf1RollRequests.embed(message, {
+  slot: "ce-crit-save",
+  type: "save",
+  key: "fort",
+  dc: 22,
+  mode: "targeted",
+  targetedActors: [{ id: tokenDoc.id }],
+  showDC: true,
+  showResults: true,
+  controls: false,
+});
+
+// Any client, from the host's own render hook, once its container exists.
+await game.pf1RollRequests.renderEmbed(message, { slot: "ce-crit-save", into: element });
+```
+
+Two calls deliberately: **`embed()` owns state, `renderEmbed()` owns placement.** Because the host places the widget itself, from its own hook, after building the container, there is no hook-ordering dependency between the two modules and no retry loop.
+
+| Call | Does |
+|---|---|
+| `embed(message, options)` | create the request state (GM only) |
+| `renderEmbed(message, { slot, into })` | draw and bind it into `into`, replacing its contents (any client) |
+| `getEmbed(message, slot)` | a copy of the slot's state, or `null` |
+| `updateEmbed(message, slot, changes)` | patch state — a DC correction, a new target |
+| `closeEmbed(message, slot, { lock })` | stop accepting rolls |
+| `listEmbeds(message)` | the slot keys present on a message |
+
+### Slots
+
+A `slot` is the caller's key for one request on a host card. It is a flag key, so it must match `/^[\w-]+$/` — **no dots**, which Foundry would expand into nesting. Namespace it yourself, by convention, with something traceable to your module (`"ce-crit-save"`). Embedding onto a slot that already exists replaces it and logs a warning; a collision is never silent, but it is not prevented either.
+
+### Options
+
+`embed()` takes the `createRequest` option set minus the parts that are properties of *being a card*:
+
+- no `flavor` or `description` — the host has its own header and prose;
+- no `awaitResult` — a Promise held on one client dies on reload. Use the hook.
+- `rollMode` is limited to `"roll"` and `"publicblind"`. The other two are whisper modes: they work by restricting who the *message* is delivered to, and an embed does not own the message. Passing one warns and falls back to `"roll"`; use `"publicblind"` to obscure the totals.
+
+Two options are its own:
+
+**`controls`** (default `true`). Setting it `false` strips the widget to its rows: no bulk action row (Roll All / Roll NPCs / Select All / Select Failed), no title, no GM mode footer. Those buttons exist because a whole-card request is usually a fireball against six tokens; an embedded one is usually a single target with a single row, where they are four buttons that each do what the one row already does. A `showDC` chip survives on its own, since a caller who asked for it meant it. `bulkRollTargeted(message, { slot })` stays available either way — suppressing the buttons is not the same as suppressing the capability.
+
+**`mount`** — a CSS selector, resolved against the message's rendered element on this module's own render hook, to place the widget without a host hook of your own. A convenience path only: it can only find containers that already exist by the time our hook runs, and it skips silently when nothing matches. **Hosts that draw their card from flags should use `renderEmbed`.**
+
+### Re-rendering
+
+A roll writes to `flags["pf1-roll-requests"].embeds.<slot>.actorResults` and stops. Foundry re-renders the message, the host's render hook fires, the host rebuilds its block and calls `renderEmbed` again. No content update, no second re-render, and the host's own state and the request's stay independent.
+
+Permissions are unchanged. `embed()` is GM-gated exactly like `createRequest`, and a player's roll crosses the existing socket to the GM — still the only writer to the message, and still serialised per message, so two embeds on one card cannot clobber each other.
+
+### Results
+
+`pf1RollRequests.rollComplete` carries **`slot`** in its payload, `null` for a whole-card request. Existing listeners that ignore it keep working; a host filters on it to pick out its own embed. `onResult` is accepted per embed and carries `slot` too, with the same caveat it already has: it lives in memory on the creating client, so a reload drops it. The hook is the durable channel.
+
+### Closing
+
+```js
+await game.pf1RollRequests.closeEmbed(message, "ce-crit-save");                // remove the slot
+await game.pf1RollRequests.closeEmbed(message, "ce-crit-save", { lock: true }); // keep the results
+```
+
+By default the slot is removed outright — the counterpart to `closeRequest`, for a request that has served its purpose. `renderEmbed` on a removed slot empties the container and returns `null`. With `lock: true` the state stays and is marked closed instead: the results remain on the host's card as a record, the roll buttons disappear, and a click racing the re-render is refused. Either way the slot's `onResult` stream is unregistered first, so a consumer never gets a terminal `"cancelled"` event for a request that completed.
+
+`lockRequest` on the *host* message closes every embed on it as well — a card that stops accepting rolls should not still be handing them out. Deleting the message (or `closeRequest`) fires the terminal `"cancelled"` event on every stream it carried, each tagged with its own `slot`.
+
 ## Hook
 
-`pf1RollRequests.rollComplete` fires whenever a roll is completed on a request card, passing the message ID, roll type, result data, and updated flags.
+`pf1RollRequests.rollComplete` fires whenever a roll is completed on a request card, passing the message ID, the `slot` (`null` unless the roll was on an [embedded request](#embedded-requests)), roll type, result data, and updated flags.

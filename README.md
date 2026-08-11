@@ -140,3 +140,5 @@ See **[api.md](api.md#custom-formulas-and-result-tables)**.
 ### API
 
 Other modules and macros can drive Roll Requests programmatically — creating requests (including auto-rolled and custom-formula ones), streaming multi-check results, closing finished cards, and registering Quick Actions, card summaries, and hooks. See **[api.md](api.md)** for the full developer reference.
+
+A module can also **[embed a live request inside a chat card it owns](api.md#embedded-requests)** — a save sitting in the middle of another module's card, rolled and reported like any other request, with neither module taking the other's card away from it.

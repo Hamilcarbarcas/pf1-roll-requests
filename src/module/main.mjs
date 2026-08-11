@@ -166,11 +166,215 @@ Hooks.on("getSceneControlButtons", (controls) => {
   }
 });
 
+// ============================================================
+// Shared request construction
+//
+// createRequest() and embed() take the same option set and differ only in where
+// the resulting state is stored and how it is drawn, so they build it here
+// together — otherwise the two would drift on every option added.
+// ============================================================
+
+/**
+ * Resolve `targetedActors` entries against the canvas, filling in whatever the
+ * caller left out. Each entry needs only `{ id }` (a token document ID).
+ *
+ * @param {object[]} targetedActors - Mutated in place.
+ * @returns {object[]} The same array.
+ */
+function resolveTargetedActors(targetedActors) {
+  for (const entry of targetedActors ?? []) {
+    const tokenDoc = canvas.tokens?.get(entry.id)?.document;
+    if (!tokenDoc) continue;
+    entry.tokenUUID ??= tokenDoc.uuid;
+    entry.name     ??= tokenDoc.name;
+    entry.img      ??= tokenDoc.texture?.src ?? tokenDoc.actor?.img;
+    entry.isHidden ??= tokenDoc.hidden ?? false;
+  }
+  return targetedActors ?? [];
+}
+
+/**
+ * Validate an option set and turn it into the flag state a request runs on.
+ * Notifies and returns null when the request should be rejected.
+ *
+ * @param {object} options
+ * @param {boolean} [embedded]  Building for embed() rather than createRequest():
+ *   the host owns the card's header, so there is no flavor or description, and
+ *   the whisper-based roll modes are unavailable (see below).
+ * @returns {Promise<object|null>}
+ */
+async function buildRequestData(options, { embedded = false } = {}) {
+  // A selection request swaps the roll for a dropdown of the result table's
+  // rows, so it needs a table to choose from but neither a check nor a formula
+  // to roll — both become optional and default to an unused "dice" request.
+  const selectFromTable = options.selectFromTable ?? false;
+  if (selectFromTable && options.resultTable == null) {
+    ui.notifications.error(game.i18n.localize("RR.Notif.SelectNeedsTable"));
+    return null;
+  }
+
+  const type = options.type ?? (selectFromTable ? "dice" : null);
+  const key = options.key ?? (selectFromTable ? "" : null);
+  if (!type || (!key && !selectFromTable)) {
+    ui.notifications.error(game.i18n.localize("RR.Notif.CreateRequestParams"));
+    return null;
+  }
+
+  const validTypes = ["ability", "save", "skill", "dice"];
+  if (!validTypes.includes(type)) {
+    ui.notifications.error(game.i18n.format("RR.Notif.InvalidType", { type, types: validTypes.join(", ") }));
+    return null;
+  }
+
+  // For "dice" the key is a roll formula. Validate it here so a typo fails on
+  // the GM's request rather than on whichever player clicks the roll button.
+  if (type === "dice" && !selectFromTable && !Roll.validate(key)) {
+    ui.notifications.error(game.i18n.format("RR.Notif.InvalidFormula", { formula: key }));
+    return null;
+  }
+
+  // --- Result table: normalize, sort, and (optionally) find the formula's range ---
+  let resultTable = null;
+  if (options.resultTable != null) {
+    if (!Array.isArray(options.resultTable) || options.resultTable.length === 0) {
+      ui.notifications.error(game.i18n.localize("RR.Notif.ResultTableInvalid"));
+      return null;
+    }
+    // Rows are thresholds, so sorting them ascending is what makes each row's
+    // upper bound "the next row's min - 1" when the card renders the table.
+    resultTable = options.resultTable
+      .map((row) => ({
+        min: Number.isFinite(Number(row?.min)) ? Number(row.min) : null,
+        label: row?.label ?? "",
+      }))
+      .sort((a, b) => {
+        const am = a.min ?? Number.NEGATIVE_INFINITY;
+        const bm = b.min ?? Number.NEGATIVE_INFINITY;
+        if (am === bm) return 0;
+        return am < bm ? -1 : 1;
+      });
+  }
+
+  const showTable = resultTable ? (options.showTable ?? false) : false;
+  // Clamping describes what a formula can reach; a selection has no formula.
+  const clampTable = (resultTable && !selectFromTable) ? (options.clampTable ?? false) : false;
+
+  // Clamping trims the table's open ends to what the formula can actually
+  // roll. Resolved once here rather than on every re-render.
+  let tableBounds = null;
+  if (clampTable && type === "dice") {
+    try {
+      const low = await new Roll(key).evaluate({ minimize: true });
+      const high = await new Roll(key).evaluate({ maximize: true });
+      tableBounds = { min: low.total, max: high.total };
+    } catch (err) {
+      console.error(`${MODULE_ID} | Could not determine formula bounds for "${key}":`, err);
+    }
+  }
+
+  // Resolve display name if not provided
+  let name = options.name;
+  if (!name) {
+    if (type === "ability") {
+      const label = pf1.config.abilities[key];
+      name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
+    } else if (type === "save") {
+      const label = pf1.config.savingThrows[key];
+      name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
+    } else if (type === "skill") {
+      const label = pf1.config.skills[key];
+      name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
+    } else if (type === "dice") {
+      name = key;
+    }
+  }
+  // A selection request may carry no key at all, leaving nothing to name it by.
+  if (!name && selectFromTable) name = options.flavor || game.i18n.localize("RR.Select.Title");
+
+  const mode = options.mode ?? "multi";
+  // A mapped result has no numeric pass/fail, so a DC would be meaningless —
+  // and nulling it also drops the pass/fail icons and the feasibility gate.
+  const dc = resultTable ? null : (options.dc ?? null);
+  const showDC = options.showDC ?? false;
+  const showResults = options.showResults ?? false;
+  // "gmroll" and "blindroll" are whisper modes: they work by restricting who the
+  // *message* is delivered to. An embed lives inside a card somebody else posted
+  // and cannot narrow its audience, so accepting them would quietly show players
+  // a roll the caller believed was hidden. "publicblind" is pure rendering and
+  // means exactly the same thing embedded as it does on a card of its own.
+  let rollMode = options.rollMode ?? "roll";
+  if (embedded && rollMode !== "roll" && rollMode !== "publicblind") {
+    console.warn(`${MODULE_ID} | rollMode "${rollMode}" is not available to an embedded request `
+      + `(it whispers the message, which an embed does not own) — falling back to "roll". `
+      + `Use "publicblind" to obscure the totals.`);
+    rollMode = "roll";
+  }
+  // The host draws its own header and prose; an embed contributes neither.
+  const flavor = embedded ? "" : (options.flavor ?? "");
+  const description = embedded ? "" : (options.description ?? "");
+  // Opt-in: a selection is final unless the request says it can be changed.
+  const allowRepick = selectFromTable ? (options.allowRepick ?? false) : false;
+
+  // Aid Another modifies a roll; a selection has none to modify.
+  const includeAid = (type === "dice" || type === "save" || selectFromTable)
+    ? false
+    : (options.includeAid ?? true);
+  const targetedActors = options.targetedActors ?? [];
+
+  if (mode === "targeted" && targetedActors.length === 0) {
+    ui.notifications.error(game.i18n.localize("RR.Notif.TargetedNeedsActors"));
+    return null;
+  }
+  if (mode === "targeted") resolveTargetedActors(targetedActors);
+
+  return {
+    mode,
+    dc: dc != null ? Number(dc) : null,
+    showDC,
+    showResults,
+    rollMode,
+    flavor,
+    includeAid,
+    request: { type, key, name },
+    description,
+    resultTable,
+    showTable,
+    clampTable,
+    tableBounds,
+    selectFromTable,
+    allowRepick,
+    locked: false,
+    summaryKey: options.summaryKey ?? null,
+    rolledActors: {},
+    aidResults: {},
+    aidTotal: 0,
+    targetedActors,
+    actorResults: {},
+    actorAidResults: {},
+    usedActorIds: [],
+  };
+}
+
+/** Resolve a message argument that may be a document or an ID. */
+function resolveMessage(message) {
+  return message?.id ? message : game.messages.get(message);
+}
+
 // Public API for macros: `game.pf1RollRequests.requestRoll()`
 Hooks.once("ready", () => {
-  game.pf1RollRequests.bulkRollTargeted = async (message) => {
+  /**
+   * Roll every pending target on a targeted card, GM-side and dialog-free —
+   * exactly what the card's Roll All button does.
+   *
+   * @param {ChatMessage|string} message
+   * @param {object} [options]
+   * @param {string} [options.slot] - Roll an embedded request on the message
+   *   instead of the card itself. Available whether or not that embed shows its
+   *   bulk buttons (see `embed`'s `controls`).
+   */
+  game.pf1RollRequests.bulkRollTargeted = async (message, options = {}) => {
     if (!game.user.isGM) return;
-    return RollRequestChat._bulkRollTargeted(message);
+    return RollRequestChat._bulkRollTargeted(resolveMessage(message), options);
   };
 
   game.pf1RollRequests.requestRoll = () => {
@@ -208,7 +412,8 @@ Hooks.once("ready", () => {
       .filter((id) => typeof id === "string" && game.messages.has(id));
     if (!ids.length) return [];
 
-    for (const id of ids) RollRequestChat.cancelResultCallback(id);
+    // Cancels the card's own stream and every embedded one it carries.
+    for (const id of ids) RollRequestChat.cancelMessageCallbacks(id);
     await ChatMessage.deleteDocuments(ids);
     return ids;
   };
@@ -227,6 +432,11 @@ Hooks.once("ready", () => {
    * fact completed. Any unresolved `awaitResult` promise resolves `null`, since
    * the roll it was waiting for can no longer happen.
    *
+   * Closing a card closes every request embedded on it too — a card that stops
+   * accepting rolls should not still be handing them out. A host that wants an
+   * embed to outlive the card it sits on manages that slot with `closeEmbed`
+   * instead.
+   *
    * @param {ChatMessage|string} message - The card, or its message ID.
    * @returns {Promise<ChatMessage|undefined>}
    */
@@ -236,21 +446,33 @@ Hooks.once("ready", () => {
       return;
     }
 
-    const msg = message?.id ? message : game.messages.get(message);
+    const msg = resolveMessage(message);
     const current = msg?.flags?.[MODULE_ID];
-    if (!current?.request) {
+    const slots = Object.keys(current?.embeds ?? {});
+    // A host card that carries only embeds is a legitimate target: it has no
+    // request of its own, but it does have rolls to stop handing out.
+    if (!current?.request && !slots.length) {
       ui.notifications.error(game.i18n.localize("RR.Notif.CantReadData"));
       return;
     }
-    if (current.locked) return msg;
 
-    RollRequestChat.cancelResultCallback(msg.id);
-    RollRequestChat.cancelPendingResult(msg.id);
+    const update = {};
 
-    await msg.update({
-      [`flags.${MODULE_ID}.locked`]: true,
-      content: await RollRequestChat._rebuildCardContent({ ...current, locked: true }),
-    });
+    if (current.request && !current.locked) {
+      RollRequestChat.cancelResultCallback(msg.id);
+      RollRequestChat.cancelPendingResult(msg.id);
+      update[`flags.${MODULE_ID}.locked`] = true;
+      update.content = await RollRequestChat._rebuildCardContent({ ...current, locked: true });
+    }
+
+    for (const slot of slots) {
+      if (current.embeds[slot]?.locked) continue;
+      RollRequestChat.cancelResultCallback(msg.id, null, null, slot);
+      update[`flags.${MODULE_ID}.embeds.${slot}.locked`] = true;
+    }
+
+    if (!Object.keys(update).length) return msg; // Already fully closed.
+    await msg.update(update);
     return msg;
   };
 
@@ -272,7 +494,7 @@ Hooks.once("ready", () => {
       return;
     }
 
-    const msg = message?.id ? message : game.messages.get(message);
+    const msg = resolveMessage(message);
     const current = msg?.flags?.[MODULE_ID];
     if (!current?.request) {
       ui.notifications.error(game.i18n.localize("RR.Notif.CantReadData"));
@@ -401,155 +623,10 @@ Hooks.once("ready", () => {
       return;
     }
 
-    // A selection request swaps the roll for a dropdown of the result table's
-    // rows, so it needs a table to choose from but neither a check nor a formula
-    // to roll — both become optional and default to an unused "dice" request.
-    const selectFromTable = options.selectFromTable ?? false;
-    if (selectFromTable && options.resultTable == null) {
-      ui.notifications.error(game.i18n.localize("RR.Notif.SelectNeedsTable"));
-      return;
-    }
+    const requestData = await buildRequestData(options);
+    if (!requestData) return;
 
-    const type = options.type ?? (selectFromTable ? "dice" : null);
-    const key = options.key ?? (selectFromTable ? "" : null);
-    if (!type || (!key && !selectFromTable)) {
-      ui.notifications.error(game.i18n.localize("RR.Notif.CreateRequestParams"));
-      return;
-    }
-
-    const validTypes = ["ability", "save", "skill", "dice"];
-    if (!validTypes.includes(type)) {
-      ui.notifications.error(game.i18n.format("RR.Notif.InvalidType", { type, types: validTypes.join(", ") }));
-      return;
-    }
-
-    // For "dice" the key is a roll formula. Validate it here so a typo fails on
-    // the GM's request rather than on whichever player clicks the roll button.
-    if (type === "dice" && !selectFromTable && !Roll.validate(key)) {
-      ui.notifications.error(game.i18n.format("RR.Notif.InvalidFormula", { formula: key }));
-      return;
-    }
-
-    // --- Result table: normalize, sort, and (optionally) find the formula's range ---
-    let resultTable = null;
-    if (options.resultTable != null) {
-      if (!Array.isArray(options.resultTable) || options.resultTable.length === 0) {
-        ui.notifications.error(game.i18n.localize("RR.Notif.ResultTableInvalid"));
-        return;
-      }
-      // Rows are thresholds, so sorting them ascending is what makes each row's
-      // upper bound "the next row's min - 1" when the card renders the table.
-      resultTable = options.resultTable
-        .map((row) => ({
-          min: Number.isFinite(Number(row?.min)) ? Number(row.min) : null,
-          label: row?.label ?? "",
-        }))
-        .sort((a, b) => {
-          const am = a.min ?? Number.NEGATIVE_INFINITY;
-          const bm = b.min ?? Number.NEGATIVE_INFINITY;
-          if (am === bm) return 0;
-          return am < bm ? -1 : 1;
-        });
-    }
-
-    const showTable = resultTable ? (options.showTable ?? false) : false;
-    // Clamping describes what a formula can reach; a selection has no formula.
-    const clampTable = (resultTable && !selectFromTable) ? (options.clampTable ?? false) : false;
-
-    // Clamping trims the table's open ends to what the formula can actually
-    // roll. Resolved once here rather than on every re-render.
-    let tableBounds = null;
-    if (clampTable && type === "dice") {
-      try {
-        const low = await new Roll(key).evaluate({ minimize: true });
-        const high = await new Roll(key).evaluate({ maximize: true });
-        tableBounds = { min: low.total, max: high.total };
-      } catch (err) {
-        console.error(`${MODULE_ID} | Could not determine formula bounds for "${key}":`, err);
-      }
-    }
-
-    // Resolve display name if not provided
-    let name = options.name;
-    if (!name) {
-      if (type === "ability") {
-        const label = pf1.config.abilities[key];
-        name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
-      } else if (type === "save") {
-        const label = pf1.config.savingThrows[key];
-        name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
-      } else if (type === "skill") {
-        const label = pf1.config.skills[key];
-        name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
-      } else if (type === "dice") {
-        name = key;
-      }
-    }
-    // A selection request may carry no key at all, leaving nothing to name it by.
-    if (!name && selectFromTable) name = options.flavor || game.i18n.localize("RR.Select.Title");
-
-    const mode = options.mode ?? "multi";
-    // A mapped result has no numeric pass/fail, so a DC would be meaningless —
-    // and nulling it also drops the pass/fail icons and the feasibility gate.
-    const dc = resultTable ? null : (options.dc ?? null);
-    const showDC = options.showDC ?? false;
-    const showResults = options.showResults ?? false;
-    const rollMode = options.rollMode ?? "roll";
-    const flavor = options.flavor ?? "";
-    // Opt-in: a selection is final unless the request says it can be changed.
-    const allowRepick = selectFromTable ? (options.allowRepick ?? false) : false;
-
-    // Aid Another modifies a roll; a selection has none to modify.
-    const includeAid = (type === "dice" || type === "save" || selectFromTable)
-      ? false
-      : (options.includeAid ?? true);
-    const targetedActors = options.targetedActors ?? [];
-
-    if (mode === "targeted" && targetedActors.length === 0) {
-      ui.notifications.error(game.i18n.localize("RR.Notif.TargetedNeedsActors"));
-      return;
-    }
-
-    // Auto-populate missing entry fields from the canvas token document.
-    if (mode === "targeted") {
-      for (const entry of targetedActors) {
-        const tokenDoc = canvas.tokens?.get(entry.id)?.document;
-        if (tokenDoc) {
-          entry.tokenUUID ??= tokenDoc.uuid;
-          entry.name     ??= tokenDoc.name;
-          entry.img      ??= tokenDoc.texture?.src ?? tokenDoc.actor?.img;
-          entry.isHidden ??= tokenDoc.hidden ?? false;
-        }
-      }
-    }
-
-    const requestData = {
-      mode,
-      dc: dc != null ? Number(dc) : null,
-      showDC,
-      showResults,
-      rollMode,
-      flavor,
-      includeAid,
-      request: { type, key, name },
-      description: options.description ?? "",
-      resultTable,
-      showTable,
-      clampTable,
-      tableBounds,
-      selectFromTable,
-      allowRepick,
-      locked: false,
-      summaryKey: options.summaryKey ?? null,
-      rolledActors: {},
-      aidResults: {},
-      aidTotal: 0,
-      targetedActors,
-      actorResults: {},
-      actorAidResults: {},
-      usedActorIds: [],
-    };
-
+    const { mode, selectFromTable } = requestData;
     const awaitResult = options.awaitResult ?? false;
     // Every result on a selection card is somebody's deliberate choice, so there
     // is nothing to fire on their behalf.
@@ -583,12 +660,230 @@ Hooks.once("ready", () => {
     // hook, or later close the card with closeRequest().
     return message;
   };
+
+  // ==========================================================
+  // Embedded requests
+  //
+  // Put a live request inside a card another module owns, without either module
+  // taking the other's card away from it. State lives at
+  // flags["pf1-roll-requests"].embeds.<slot>; message.content is never read and
+  // never written. Placement is the host's job (renderEmbed), which is what
+  // makes ordering between the two modules a non-issue rather than a race.
+  // ==========================================================
+
+  /** Slot keys are flag keys: a dot in one would be expanded into nesting. */
+  const SLOT_PATTERN = /^[\w-]+$/;
+
+  const validateSlot = (slot) => {
+    if (typeof slot === "string" && SLOT_PATTERN.test(slot)) return true;
+    ui.notifications.error(game.i18n.localize("RR.Notif.EmbedSlotInvalid"));
+    return false;
+  };
+
+  /**
+   * Attach a roll request to an existing chat message, as state only — this
+   * renders nothing by itself. The host draws it with `renderEmbed()` from its
+   * own render hook, or asks for the convenience `mount` below.
+   *
+   * Takes the `createRequest` option set minus the parts that are properties of
+   * *being a card*: no `flavor` or `description` (the host has its own header
+   * and prose) and no `awaitResult` (a Promise held on one client dies on
+   * reload — use the `pf1RollRequests.rollComplete` hook, filtered on `slot`).
+   * `rollMode` is limited to `"roll"` and `"publicblind"`; the whisper modes
+   * restrict who the *message* reaches, which an embed does not own.
+   *
+   * GM-only, exactly like `createRequest`. A player's roll crosses the existing
+   * socket to the GM, who stays the only writer to the message.
+   *
+   * @param {ChatMessage|string} message - The host card, or its message ID.
+   * @param {object} options
+   * @param {string} options.slot        - Key for this request on the host card,
+   *   matching `/^[\w-]+$/`. Namespace it yourself (`"ce-crit-save"`); an
+   *   existing slot of the same name is replaced, with a console warning.
+   * @param {boolean} [options.controls=true] - `false` strips the widget to its
+   *   rows: no bulk action row (Roll All / Roll NPCs / Select …), no title, no
+   *   GM mode footer. A `showDC` chip survives. `bulkRollTargeted(message,
+   *   { slot })` stays available regardless — suppressing the buttons is not the
+   *   same as suppressing the capability.
+   * @param {string} [options.mount]     - CSS selector, resolved against the
+   *   message's rendered element on this module's own render hook, to auto-place
+   *   the widget. A convenience for consumers that don't draw their card from
+   *   flags; skipped silently when nothing matches. Hosts that rebuild their
+   *   block should call `renderEmbed` instead.
+   * @param {(payload: object) => void} [options.onResult] - As `createRequest`,
+   *   scoped to this slot and carrying it in the payload. In-memory on the
+   *   creating client, so a reload drops it; the hook is the durable channel.
+   * @returns {Promise<ChatMessage|undefined>} The host message, or undefined if
+   *   the request was rejected.
+   */
+  game.pf1RollRequests.embed = async (message, options = {}) => {
+    if (!game.user.isGM) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.GMOnly"));
+      return;
+    }
+
+    const msg = resolveMessage(message);
+    if (!msg) {
+      ui.notifications.error(game.i18n.localize("RR.Notif.CantReadData"));
+      return;
+    }
+    const slot = options.slot;
+    if (!validateSlot(slot)) return;
+
+    const data = await buildRequestData(options, { embedded: true });
+    if (!data) return;
+
+    data.controls = options.controls ?? true;
+    data.mount = (typeof options.mount === "string" && options.mount) ? options.mount : null;
+
+    // Flags deep-merge, so replacing a slot has to clear the old one first or
+    // its results would survive underneath the new request.
+    if (msg.flags?.[MODULE_ID]?.embeds?.[slot]) {
+      console.warn(`${MODULE_ID} | Embed slot '${slot}' already exists on message ${msg.id} — replacing it.`);
+      RollRequestChat.cancelResultCallback(msg.id, null, null, slot);
+      await msg.update({ [`flags.${MODULE_ID}.embeds.-=${slot}`]: null });
+    }
+
+    await msg.update({ [`flags.${MODULE_ID}.embeds.${slot}`]: data });
+
+    if (typeof options.onResult === "function") {
+      RollRequestChat.registerResultCallback(msg.id, options.onResult, slot);
+    }
+
+    if (data.mode === "targeted" && options.autoRoll && !data.selectFromTable) {
+      await RollRequestChat._bulkRollTargeted(msg, { slot });
+    }
+    return msg;
+  };
+
+  /**
+   * Render an embedded request into an element the caller owns, replacing that
+   * element's contents, and bind its buttons.
+   *
+   * Call this from your own `renderChatMessageHTML` hook once the container
+   * exists — there is then no hook-ordering dependency between the two modules
+   * and no retry loop. A roll writes only to flags, so Foundry re-renders the
+   * message, your hook fires again, and you call this again on the rebuilt
+   * container. Callable on any client.
+   *
+   * @param {ChatMessage|string} message
+   * @param {object} options
+   * @param {string} options.slot      - The slot passed to `embed()`.
+   * @param {HTMLElement} options.into - Container to render into.
+   * @returns {Promise<HTMLElement|null>} The rendered card, or null when the
+   *   slot holds no request (closed, or never embedded); the container is
+   *   emptied in that case.
+   */
+  game.pf1RollRequests.renderEmbed = async (message, options = {}) => {
+    const msg = resolveMessage(message);
+    if (!msg) return null;
+    return RollRequestChat.renderEmbed(msg, options);
+  };
+
+  /**
+   * The current state of one embedded request — a copy, so mutating it does
+   * nothing; use `updateEmbed` to change it.
+   *
+   * @param {ChatMessage|string} message
+   * @param {string} slot
+   * @returns {object|null}
+   */
+  game.pf1RollRequests.getEmbed = (message, slot) => {
+    const state = RollRequestChat._readState(resolveMessage(message), slot);
+    return state ? foundry.utils.deepClone(state) : null;
+  };
+
+  /**
+   * The slot keys of every request embedded on a message.
+   *
+   * @param {ChatMessage|string} message
+   * @returns {string[]}
+   */
+  game.pf1RollRequests.listEmbeds = (message) =>
+    Object.keys(resolveMessage(message)?.flags?.[MODULE_ID]?.embeds ?? {});
+
+  /**
+   * Patch an embedded request's state in place — correct a DC, add a target,
+   * reveal results. The flag write re-renders the message, so the host's hook
+   * fires and the widget redraws with no further call.
+   *
+   * Keys are paths within the embed's own state, so `"request.name"` reaches the
+   * nested field. Arrays are replaced wholesale, so pass a complete
+   * `targetedActors` when adding a target; new entries are resolved against the
+   * canvas exactly as `createRequest` resolves them.
+   *
+   * @param {ChatMessage|string} message
+   * @param {string} slot
+   * @param {object} changes
+   * @returns {Promise<ChatMessage|undefined>}
+   */
+  game.pf1RollRequests.updateEmbed = async (message, slot, changes = {}) => {
+    if (!game.user.isGM) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.GMOnly"));
+      return;
+    }
+
+    const msg = resolveMessage(message);
+    const state = RollRequestChat._readState(msg, slot);
+    if (!state?.request) {
+      ui.notifications.error(game.i18n.localize("RR.Notif.CantReadData"));
+      return;
+    }
+
+    if (Array.isArray(changes.targetedActors)) resolveTargetedActors(changes.targetedActors);
+
+    const updateData = {};
+    for (const [key, value] of Object.entries(changes)) {
+      updateData[`flags.${MODULE_ID}.embeds.${slot}.${key}`] = value;
+    }
+    if (!Object.keys(updateData).length) return msg;
+
+    await msg.update(updateData);
+    return msg;
+  };
+
+  /**
+   * Stop an embedded request accepting rolls.
+   *
+   * By default the slot is removed outright — the counterpart to
+   * `closeRequest`, for a request that has served its purpose. With
+   * `lock: true` the state stays and is marked closed instead, so the results
+   * remain on the host's card as a record while the roll buttons disappear and
+   * any click racing the re-render is refused (as `lockRequest` does for a
+   * card).
+   *
+   * Either way the slot's `onResult` stream is unregistered first, so a consumer
+   * doesn't receive a terminal `"cancelled"` event for a request that completed.
+   *
+   * @param {ChatMessage|string} message
+   * @param {string} slot
+   * @param {object} [options]
+   * @param {boolean} [options.lock=false] - Keep the results visible.
+   * @returns {Promise<ChatMessage|undefined>}
+   */
+  game.pf1RollRequests.closeEmbed = async (message, slot, { lock = false } = {}) => {
+    if (!game.user.isGM) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.GMOnly"));
+      return;
+    }
+
+    const msg = resolveMessage(message);
+    const state = RollRequestChat._readState(msg, slot);
+    if (!state) return msg;
+
+    RollRequestChat.cancelResultCallback(msg.id, null, null, slot);
+
+    await msg.update(lock
+      ? { [`flags.${MODULE_ID}.embeds.${slot}.locked`]: true }
+      : { [`flags.${MODULE_ID}.embeds.-=${slot}`]: null });
+    return msg;
+  };
 });
 
 // Clean up pending result promises and streaming callbacks when a card is deleted.
-// awaitResult resolves null; onResult gets a final "cancelled" terminal event.
+// awaitResult resolves null; every onResult on the message — the card's own and
+// each embedded request's — gets a final "cancelled" terminal event.
 Hooks.on("deleteChatMessage", (message) => {
   RollRequestChat.cancelPendingResult(message.id);
-  const dc = message.flags?.[MODULE_ID]?.dc ?? null;
-  RollRequestChat.cancelResultCallback(message.id, "deleted", dc);
+  RollRequestChat.cancelMessageCallbacks(message, "deleted");
 });

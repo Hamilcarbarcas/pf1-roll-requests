@@ -1121,3 +1121,32 @@
   opacity: 1;
   border-color: #ff6400;
 }
+
+/* ============================================================
+   Embedded Requests
+   A request rendered inside a card another module owns (API: embed /
+   renderEmbed). The host draws the frame; the widget contributes only its
+   rows, so it drops the outer card's spacing and never repeats its border.
+   ============================================================ */
+
+.arr-card.arr-embed {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+}
+
+/* `controls: false` — rows only. The header survives solely to carry a DC
+   chip (see _stripCardChrome), so it loses the full header's rules and
+   right-aligns the number over the rows it applies to. */
+.arr-card.arr-card-bare > .arr-card-header {
+  border-top: none;
+  border-bottom: none;
+  padding: 0 0 2px;
+  justify-content: flex-end;
+}
+
+.arr-card.arr-card-bare > .arr-card-body {
+  padding-top: 0;
+}

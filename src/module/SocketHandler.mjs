@@ -29,19 +29,21 @@ export class SocketHandler {
     }
   }
 
-  static async _handleRollResult({ messageId, rollType, targetActorId, isRepick, resultEntry }) {
+  static async _handleRollResult({ messageId, rollType, targetActorId, isRepick, slot = null, resultEntry }) {
     const message = game.messages.get(messageId);
     if (!message) {
       console.warn(`${MODULE_ID} | Message ${messageId} not found`);
       return;
     }
 
-    const flags = message.flags?.[MODULE_ID];
+    // `slot` names which request on the message the result belongs to: an
+    // embedded one, or null for the message's own card.
+    const flags = RollRequestChat._readState(message, slot);
     if (!flags) {
-      console.warn(`${MODULE_ID} | No flags found on message ${messageId}`);
+      console.warn(`${MODULE_ID} | No ${slot ? `embed '${slot}'` : "flags"} found on message ${messageId}`);
       return;
     }
 
-    await RollRequestChat._updateMessage(message, rollType, resultEntry, flags, { targetActorId, isRepick });
+    await RollRequestChat._updateMessage(message, rollType, resultEntry, flags, { targetActorId, isRepick, slot });
   }
 }
