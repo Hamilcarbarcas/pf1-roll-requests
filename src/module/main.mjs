@@ -37,6 +37,17 @@ Hooks.once("init", () => {
     default: true,
   });
 
+  // Extends the above to actions with no save and no configured check: the PF1
+  // target list is replaced by a roll-request list that has nothing to roll.
+  game.settings.register(MODULE_ID, "target-list-always", {
+    name: "RR.Settings.TargetListAlways.Name",
+    hint: "RR.Settings.TargetListAlways.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
   // Setting to toggle the token-control-bar button
   game.settings.register(MODULE_ID, "show-button", {
     name: "RR.Settings.ShowButton.Name",
@@ -187,7 +198,9 @@ function resolveTargetedActors(targetedActors) {
     if (!tokenDoc) continue;
     entry.tokenUUID ??= tokenDoc.uuid;
     entry.name     ??= tokenDoc.name;
-    entry.img      ??= tokenDoc.texture?.src ?? tokenDoc.actor?.img;
+    // Actor art, not the token texture — portraits read better at card size
+    // than a top-down token, and fall back to it when the actor has none.
+    entry.img      ??= tokenDoc.actor?.img ?? tokenDoc.texture?.src;
     entry.isHidden ??= tokenDoc.hidden ?? false;
   }
   return targetedActors ?? [];
@@ -371,6 +384,9 @@ Hooks.once("ready", () => {
    * @param {string} [options.slot] - Roll an embedded request on the message
    *   instead of the card itself. Available whether or not that embed shows its
    *   bulk buttons (see `embed`'s `controls`).
+   * @param {string} [options.which="all"] - "npcs" skips any target an active
+   *   player owns (and every character-type actor), leaving them to roll for
+   *   themselves — what the card's Roll NPCs button does.
    */
   game.pf1RollRequests.bulkRollTargeted = async (message, options = {}) => {
     if (!game.user.isGM) return;

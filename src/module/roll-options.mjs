@@ -34,6 +34,10 @@ export const ROLL_CATEGORIES = [
  * @property {object} request       - { type, key, name } describing the roll.
  * @property {boolean} promptActors - When true, open an actor-selection popup
  *                                    (all selected by default) before firing.
+ * @property {boolean} useSelectedTokens - When true, target the tokens currently
+ *                                    selected on the canvas instead of prompting.
+ * @property {boolean} promptOptions - When true, ask for a DC and flavor text
+ *                                    first; both may be left blank.
  * @property {object} config        - Baked-in request settings mirroring the
  *                                    fields produced by the main dialog.
  */
@@ -52,6 +56,28 @@ export const QUICK_ACTIONS = [
       // Public chat card, but roll totals are hidden from players (GM sees them).
       rollMode: "publicblind",
       includeAid: false,
+    },
+  },
+  {
+    // Same check as Spot Checks, but taken from the canvas selection rather than
+    // an actor list — and with a DC/flavor popup in front of it.
+    key: "quick-perception",
+    label: "RR.Quick.Perception",
+    icon: "fa-binoculars",
+    request: { type: "skill", key: "per", name: "RR.Quick.SpotRollName" },
+    useSelectedTokens: true,
+    promptOptions: true,
+    config: {
+      mode: "targeted",
+      dc: null,
+      showDC: false,
+      showResults: false,
+      // Public chat card, but roll totals are hidden from players (GM sees them).
+      rollMode: "publicblind",
+      includeAid: false,
+      // A DC entered in the popup must not turn into "you cannot succeed" warnings:
+      // that tells a player how hard a check they were never shown the DC for is.
+      allowUnpassable: true,
     },
   },
   {
@@ -86,9 +112,19 @@ const externalQuickActions = new Map();
  * @param {boolean} [definition.allActors]   - Pass every eligible actor to the callback
  *                                              without prompting (default false). Ignored
  *                                              when `promptActors` is true.
+ * @param {boolean} [definition.useSelectedTokens] - Pass the tokens currently selected on
+ *                                              the canvas as the actor list (default false).
+ *                                              Entries are keyed by *token* id and carry a
+ *                                              `tokenUUID`. Aborts with a warning when
+ *                                              nothing is selected. Ignored when
+ *                                              `promptActors` is true.
+ * @param {boolean} [definition.promptOptions] - Ask for a DC and flavor text before running,
+ *                                              both optional, and pass them to the callback
+ *                                              as `options` (default false). Cancelling the
+ *                                              popup aborts the action.
  * @param {boolean} [definition.closeOnUse]  - Close the Roll Request window after the
  *                                              callback resolves (default false).
- * @param {(context: {app: object, actors: Array<{id: string, name: string, img: string}>|null, event: Event}) => any} definition.callback
+ * @param {(context: {app: object, actors: Array<{id: string, name: string, img: string, tokenUUID?: string}>|null, options: {dc: number|null, flavor: string}|null, event: Event}) => any} definition.callback
  *        Invoked when the button is clicked.
  * @returns {string} The registered key.
  */
@@ -108,6 +144,8 @@ export function registerQuickAction(definition) {
     icon: definition.icon ?? "fa-bolt",
     promptActors: definition.promptActors ?? false,
     allActors: definition.allActors ?? false,
+    useSelectedTokens: definition.useSelectedTokens ?? false,
+    promptOptions: definition.promptOptions ?? false,
     closeOnUse: definition.closeOnUse ?? false,
     callback: definition.callback,
     external: true,

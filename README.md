@@ -20,7 +20,7 @@ A GM-only dialog accessed via the dice button in the token controls toolbar, or 
 The dialog lets you select:
 
 - **Check type** — Ability checks, saving throws, skill checks, or raw dice
-- **Mode** — Single-check, multi-check, selection-check (prompt specific actors), or DM check (auto-roll for your selected NPCs)
+- **Mode** — Single-check, multi-check, selection-check (prompt specific actors), token check (prompt your selected tokens), or DM check (auto-roll for your selected NPCs)
 - **DC** — Optional; can be shown or hidden from players
   - **Allow un-passable checks** — By default an actor who cannot reach the DC even on a natural 20 is blocked from rolling. Tick this to let them roll anyway (this also lifts the aid requirement below). Trained-only skills without ranks are still blocked (see below).
 - **Roll mode** — Public, GM-only, or blind roll.
@@ -38,6 +38,12 @@ In **Selection Check** mode a checklist of actors appears. It is rebuilt each ti
 
 To hide a player-owned NPC you don't want prompted, **right-click its row** and choose **Exclude from List**. Excluded actors are stored per-world and can be reviewed or restored under **Settings → Module Settings → Manage Excluded Actors**.
 
+#### Token Check
+
+**Token Check** posts the same per-target card a Selection Check does, but takes its targets from the tokens you have **selected on the canvas** rather than from the checklist. There is no list to tick — select the tokens, pick the check, click **Request Roll**.
+
+Because the card is built from tokens rather than actors, unlinked duplicates of the same actor each get their own row and result, and each row can be rolled by whoever owns that token (the GM can roll any of them). Any token type is eligible, not just NPCs. Aid Another, the DC, and the roll mode all work exactly as they do for a Selection Check — the difference is only where the target list comes from. Cards are tagged `[Token Check]`.
+
 ### Chat Cards
 
 ![Chat Message](assets/request-roll-chat-message-blank.png) 
@@ -52,7 +58,7 @@ To hide a player-owned NPC you don't want prompted, **right-click its row** and 
 
 **DM check mode:** For quickly resolving a check across a group of NPCs — e.g. having a room full of guards roll Perception. Select the NPC tokens on the canvas, pick the check, and click **Request Roll**: the module immediately rolls for every selected NPC (no dialogs, no player interaction) and posts a single card listing each result. Each selected token rolls independently, so unlinked duplicates of the same actor each get their own line. Aid Another is disabled, and the roll mode automatically switches to **Private GM Roll** when you select this mode (your previous roll mode is restored if you switch to another mode). You can still override the roll mode afterward — for example set it to Public if you want the party to see the results. When [pf1-token-randomizer](https://github.com/Hamilcarbarcas/pf1-token-randomizer) is active, NPC names on the card respect its obscured-name setting, so players see the obscured name (and the GM/observers see the real one).
 
-Every request card tags its title with the check mode — `[Single Check]`, `[Multi-Check]`, or `[Selected Check]` — so the kind of check is clear at a glance. (Auto-generated saving-throw cards are left untagged.)
+Every request card tags its title with the check mode — `[Single Check]`, `[Multi-Check]`, `[Selected Check]`, `[Token Check]`, or `[DM Check]` — so the kind of check is clear at a glance. (Auto-generated saving-throw cards are left untagged.)
 
 The GM always sees the DC and pass/fail results. Players see them only if the GM enabled visibility for that request.
 
@@ -70,6 +76,12 @@ This feature is enabled by default and can be toggled in **Settings → Module S
 
 Another module can leave a specific target off the generated card while keeping it in the action's target list — see [`excludeTargets`](api.md#excluding-targets-from-an-auto-save-request) in the API reference.
 
+#### Replacing Every Target List
+
+**Settings → Module Settings → Replace All Target Lists** extends the conversion to actions that have no saving throw and no configured check — a plain attack, say. The card gets the same list PF1's own target boxes would have occupied: portraits, names, the defenses dropdown, the canvas hover and click, and **Select All**. There is nothing to roll, so there is no roll button, no **Roll All** / **Roll NPCs**, and no **Select Passed** / **Select Failed** — those partition a set of results the card will never have.
+
+Off by default, and it requires **Auto-Request Saving Throws** to be on. Only lists PF1 actually drew are replaced.
+
 #### Skill & Ability Check Actions
 
 The same auto-request pipeline can be driven by a **skill check** or **ability check** instead of a saving throw. On any item action's **Saving Throw** tab, the **Type** dropdown now includes **Skill Check** and **Ability Check** alongside Fortitude / Reflex / Will:
@@ -86,16 +98,17 @@ From a player's perspective the card is indistinguishable from a saving throw �
 **GM view:**
 
 - Each targeted token gets a compact row with their portrait, name, and a roll button.
-- **Roll All** — rolls the saving throw for every unrolled target, skipping the roll dialog. Also available for blind-roll targeted cards created via the API.
+- **Roll All** — rolls the saving throw for every unrolled target, skipping the roll dialog. Present on every targeted card, not just auto-generated saves: selection, token and API-created cards get the same pair. (A one-target card keeps **Roll All** — the per-row button opens the roll dialog and this one never does — but drops **Roll NPCs**, which has nothing to partition.)
 - **Roll NPCs** — like Roll All, but skips any NPC token that an active player has ownership of (so player-owned creatures roll themselves).
 - **Select All / Select Passed / Select Failed** — canvas token-selection shortcuts that highlight the relevant tokens based on current results.
-- Clicking any token portrait selects that token on the canvas.
-- Clicking a target's **row** expands a collapsible dropdown. Before a roll it shows that creature's defenses; after a roll it shows the roll breakdown on top with the defenses below. Defenses include AC / touch / FF AC, CMD / flat-footed CMD, all three saving throws, plus spell resistance, damage reduction, energy resistance, active conditions, and any AC / CMD / save notes.
-- When there is only one target, all bulk and selection buttons are suppressed (no point in Roll All or Select Passed with a single token).
+- Hovering a target's portrait or name highlights that token on the canvas, the same way PF1's own target boxes do. Clicking the portrait selects it.
+- Clicking a target's **row** expands a collapsible dropdown. Before a roll it shows that creature's defenses; after a roll it shows the roll breakdown on top with the defenses below. Defenses include AC / touch / FF AC, CMD / flat-footed CMD, all three saving throws, plus spell resistance, damage reduction, energy resistance, active conditions, and any AC / CMD / save notes. The stats are labelled with the same icons PF1 uses in its target boxes — shield for AC, pointing hand for touch, shoe-prints for flat-footed, and PF1's own heart / arrow / brain for Fortitude / Reflex / Will. The two CMD stats take a leading fist to mark them out from AC, keeping PF1's shield and shoe-prints as their second glyph. Hover any of them for the full name.
+- The dropdown's **Defenses** heading posts PF1's own defenses card to chat, whispered to you — the same card PF1's target boxes produce when you click a target's AC. It appears as a link only for actors you own, since PF1 refuses the card otherwise.
+- When there is only one target, all bulk and selection buttons are suppressed (no point in Roll All or Select Passed with a single token), and that target's dropdown is expanded from the start.
 
 **Player view:**
 
-- Tokens the player has at least Observer permission on appear as normal rows with a roll button. Clicking the token's **row** expands the same dropdown available to the GM (defenses, plus the roll breakdown once rolled).
+- Tokens the player has at least Observer permission on appear as normal rows with a roll button. Clicking the token's **row** expands the same dropdown available to the GM (defenses, plus the roll breakdown once rolled), and hovering the portrait or name highlights the token on the canvas. A player seeing exactly one row gets it expanded from the start.
 - Tokens the player can see but lacks Observer permission on appear as a compact centered portrait grid (names and results hidden).
 - Tokens that are hidden from the player are removed from the card entirely.
 
@@ -106,6 +119,7 @@ An optional **Quick Actions** category at the bottom of the options grid holds c
 Available Quick Actions:
 
 - **Spot Checks** — prompts a Perception check from selected actors. Opens an actor picker (the same list as Prompt Actors, nothing checked to start, with **Select All** / **Select None** buttons below the list), then posts a **public** request card whose roll totals are hidden from players (the GM sees them), with no DC and no Aid Another.
+- **Quick Perception** — the same Perception check, taken from the tokens **selected on the canvas** instead of a picker (a Token Check, in effect). A small popup asks for a **DC** and **flavor text** first; both are optional, so clicking **OK** on an empty form is a normal use. The card is public with totals hidden from players, and has no Aid Another. Any DC you enter is used for the GM's pass/fail marks only — it is not shown to players, and nobody is blocked from rolling a check they cannot pass.
 - **Monster Lore** — opens the Monster Lore window (see below) instead of posting a card directly, and closes the Roll Request dialog.
 
 Custom quick actions can be made via the mod API.

@@ -32,8 +32,16 @@ export class SaveAutoRequest {
 
     // Resolve what to request: a system saving throw, or a configured
     // skill/ability check flagged on the originating action.
-    const descriptor = SaveAutoRequest._resolveDescriptor(message);
-    if (!descriptor) return;
+    let descriptor = SaveAutoRequest._resolveDescriptor(message);
+    if (!descriptor) {
+      // Nothing to roll. The list is still worth replacing when the GM has asked
+      // for it — same rows, defenses and token controls, no roll button.
+      if (!game.settings.get(MODULE_ID, "target-list-always")) return;
+      // Only replace a list PF1 actually drew; _extractPf1Content keys off that
+      // element, and without it the conversion would eat the card's content.
+      if (!html.querySelector?.(".attack-targets")) return;
+      descriptor = { type: "none", key: "", name: game.i18n.localize("RR.Card.TargetsTitle") };
+    }
 
     // Prevent duplicate concurrent initializations for the same message
     if (SaveAutoRequest._pendingInit.has(message.id)) return;
@@ -156,9 +164,10 @@ export class SaveAutoRequest {
   // ----------------------------------------------------------
 
   static async _initialize(message, html, descriptor) {
+    const targetsOnly = descriptor.type === "none";
     const dc = descriptor.type === "save"
       ? (descriptor.dc != null ? Number(descriptor.dc) : null)
-      : SaveAutoRequest._resolveCheckDC(descriptor);
+      : targetsOnly ? null : SaveAutoRequest._resolveCheckDC(descriptor);
     const targetUUIDs = SaveAutoRequest.requestTargets(message);
 
     // Resolve token UUIDs to targetedActors entries.
@@ -178,7 +187,8 @@ export class SaveAutoRequest {
         tokenUUID: uuid,
         isHidden: !!tokenDoc.hidden,
         name: tokenDoc.name,
-        img: tokenDoc.texture?.src ?? actor.img,
+        // Actor art, not the token texture — see resolveTargetedActors in main.mjs
+        img: actor.img ?? tokenDoc.texture?.src,
       });
     }
     if (!targetedActors.length) return;
@@ -190,13 +200,16 @@ export class SaveAutoRequest {
     // system save), so synthesize an equivalent button in the same footer slot —
     // a standalone check roll for the clicker's selected token, mirroring the
     // native "Fortitude DC 12" button that saving throws get for free.
-    if (descriptor.type !== "save") {
+    if (descriptor.type !== "save" && !targetsOnly) {
       footerHtml = SaveAutoRequest._appendCheckButton(footerHtml, descriptor, dc);
     }
 
     const flagData = {
       mode: "targeted",
       isSaveRequest: true,
+      // Nothing to roll: the card is the target list, its defenses and the token
+      // controls. Suppresses the roll buttons and every bulk action that fires one.
+      targetsOnly,
       request: { type: descriptor.type, key: descriptor.key, name: descriptor.name },
       dc: dc !== null ? Number(dc) : null,
       showDC: dc !== null,

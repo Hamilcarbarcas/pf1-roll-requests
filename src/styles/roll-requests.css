@@ -827,6 +827,32 @@
   white-space: nowrap;
 }
 
+/* Quick Action DC / flavor popup */
+.arr-quick-options {
+  padding: 2px 0;
+}
+
+.arr-quick-options-hint {
+  font-size: 11px;
+  opacity: 0.8;
+  margin: 0 0 6px;
+}
+
+.arr-quick-options-row {
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.arr-quick-options-row label {
+  flex: 0 0 70px;
+  font-size: 12px;
+}
+
+.arr-quick-options-row input {
+  flex: 1;
+}
+
 /* ============================================================
    Chat Card — Targeted Mode
    ============================================================ */
@@ -939,18 +965,65 @@
   margin-bottom: 1px;
 }
 
-/* A row of inline stats (AC / CMD / saves) — label and value on one line */
+/* Heading posts PF1's own defenses card. Only added for actors the viewer owns
+   — displayDefenseCard refuses otherwise — so the affordance means it works. */
+.pf1-roll-requests .arr-def-header.arr-def-post {
+  cursor: pointer;
+}
+
+.pf1-roll-requests .arr-def-header.arr-def-post:hover {
+  color: #7a2020;
+}
+
+.pf1-roll-requests .arr-def-post-icon {
+  font-size: 9px;
+  margin-left: 4px;
+  opacity: 0.6;
+}
+
+/* A row of inline stats (AC / CMD / saves) — centred in its own outlined box.
+   The note groups below are deliberately left unboxed. */
 .arr-def-row {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
   column-gap: 12px;
   row-gap: 1px;
+  padding: 1px 4px;
+  border: 1px solid #c9c9c9;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .arr-def-stat {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 4px;
+}
+
+/* A stat's glyph group. Usually one icon; the CMD pair is two, held tighter to
+   each other than to the value so they read as one label. */
+.arr-def-glyphs {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
+/* Font Awesome glyphs (AC / touch / flat-footed / CMD) */
+.pf1-roll-requests .arr-def-glyphs > i.fa-solid {
+  font-size: 11px;
+  color: #555;
+}
+
+/* PF1's masked SVG glyphs (the three saves). Its own rule fixes them at 24px
+   on a black fill; both have to be overridden here to sit in a stat row. */
+.pf1-roll-requests .arr-def-glyphs > i.icon-pf {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-color: #555;
 }
 
 .arr-def-label {

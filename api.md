@@ -54,10 +54,10 @@ Each `targetedActors` entry requires only `id` (the token document ID). All othe
 |---|---|---|
 | `tokenUUID` | `tokenDoc.uuid` | Use a different token document for actor/ownership lookup |
 | `name` | `tokenDoc.name` | Show a different display name on the card |
-| `img` | `tokenDoc.texture.src` (falls back to actor portrait) | Show a different portrait |
+| `img` | `tokenDoc.actor.img` (falls back to the token texture) | Show a different portrait |
 | `isHidden` | `tokenDoc.hidden` | Force a token visible or hidden on the card regardless of its canvas state |
 
-`game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place. Pass `{ slot }` as a second argument to roll an [embedded request](#embedded-requests) instead of the card itself.
+`game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place. Pass `{ slot }` as a second argument to roll an [embedded request](#embedded-requests) instead of the card itself, and `{ which: "npcs" }` to skip every character-type actor and every target an active player owns — what the card's **Roll NPCs** button does.
 
 Passing `autoRoll: true` to `createRequest` does the same thing one step earlier — the card is posted and every target rolled before the call resolves, so the returned message's flags already carry the full results. Use `bulkRollTargeted` instead when you need to do something between posting the card and rolling it. Both are GM-side and dialog-free: the rolls execute on the GM's client regardless of who owns the token, which is also what **Roll All** does.
 
@@ -271,21 +271,29 @@ game.pf1RollRequests.registerQuickAction({
   label: "Darkvision Check",        // button label (defaults to key)
   icon: "fa-eye-low-vision",        // optional Font Awesome icon (default: fa-bolt)
   promptActors: true,               // optional: show the actor picker first (default: false)
-  allActors: false,                 // optional: pass all eligible actors without prompting
+  useSelectedTokens: false,         // optional: use the canvas selection as the actor list
                                     //           (default: false; ignored if promptActors is true)
+  allActors: false,                 // optional: pass all eligible actors without prompting
+                                    //           (default: false; ignored by either of the above)
+  promptOptions: false,             // optional: ask for a DC and flavor text first (default: false)
   closeOnUse: false,                // optional: close the dialog afterwards (default: false)
-  callback: ({ app, actors, event }) => {
-    // app    — the RollRequestDialog instance (call app.close() to dismiss it,
-    //          or app.getEligibleActors() for the full eligible list)
-    // actors — [{ id, name, img }]: the picker selection (promptActors) or the full
-    //          eligible list (allActors); null when neither option is set
-    // event  — the originating click event
+  callback: ({ app, actors, options, event }) => {
+    // app     — the RollRequestDialog instance (call app.close() to dismiss it,
+    //           or app.getEligibleActors() for the full eligible list)
+    // actors  — [{ id, name, img }]: the picker selection (promptActors), the canvas
+    //           selection (useSelectedTokens, keyed by token id and carrying tokenUUID),
+    //           or the full eligible list (allActors); null when none is set
+    // options — { dc, flavor } from the popup (promptOptions); null when not asked.
+    //           `dc` is null and `flavor` "" when the field was left blank
+    // event   — the originating click event
     myModule.doSomething(actors);
   },
 });
 ```
 
-The three actor-passing modes are mutually ordered: `promptActors` (show picker) takes precedence, then `allActors` (send everyone), otherwise `actors` is `null`. The picker opens with nothing checked and offers **Select All** / **Select None** buttons; cancelling it, or confirming with an empty selection, aborts the quick action without invoking the callback.
+The actor-passing modes are mutually ordered: `promptActors` (show picker) takes precedence, then `useSelectedTokens` (canvas selection), then `allActors` (send everyone), otherwise `actors` is `null`. The picker opens with nothing checked and offers **Select All** / **Select None** buttons; cancelling it, or confirming with an empty selection, aborts the quick action without invoking the callback. `useSelectedTokens` likewise aborts with a warning when nothing is selected on the canvas.
+
+`promptOptions` opens its popup *after* the actor list is settled, so a click that has nothing to act on fails before anything is typed into it. Both fields may be left blank; cancelling the popup aborts the action.
 
 - Register during the `ready` hook (or later) so `game.pf1RollRequests` exists.
 - The `callback` may be async; it is awaited, and the dialog is closed afterward only if `closeOnUse` is `true` (you can also call `app.close()` yourself at any time).

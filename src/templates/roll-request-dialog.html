@@ -13,6 +13,10 @@
                     <input type="radio" name="checkMode" value="selection" {{#if (eq checkMode "selection")}}checked{{/if}} />
                     {{localize "RR.Dialog.SelectionCheck"}}
                 </label>
+                <label class="arr-radio-label" title="{{localize "RR.Dialog.TokenCheckHint"}}">
+                    <input type="radio" name="checkMode" value="token" {{#if (eq checkMode "token")}}checked{{/if}} />
+                    {{localize "RR.Dialog.TokenCheck"}}
+                </label>
                 <label class="arr-radio-label">
                     <input type="radio" name="checkMode" value="multi" {{#if (eq checkMode "multi")}}checked{{/if}} />
                     {{localize "RR.Dialog.MultiCheck"}}

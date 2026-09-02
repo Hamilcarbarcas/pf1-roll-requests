@@ -249,16 +249,31 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
         .map(id => game.actors.get(id))
         .filter(Boolean)
         .map(a => ({ id: a.id, name: a.name, img: a.img }));
+    } else if (action.useSelectedTokens) {
+      // Whatever is selected on the canvas, exactly as Token Check mode takes it.
+      selectedActors = RollRequestDialog.getSelectedTokenTargets();
+      if (selectedActors.length === 0) {
+        ui.notifications.warn(game.i18n.localize("RR.Notif.SelectTokens"));
+        return;
+      }
     } else if (action.allActors) {
       // Pass every eligible actor without prompting.
       selectedActors = this._getPromptActors(new Set())
         .map(a => ({ id: a.id, name: a.name, img: a.img }));
     }
 
+    // Optional DC / flavor popup. Asked once the targets are known, so a click
+    // with nothing selected fails before the GM has typed anything into it.
+    let promptedOptions = null;
+    if (action.promptOptions) {
+      promptedOptions = await this._promptQuickOptions(game.i18n.localize(action.label));
+      if (!promptedOptions) return; // Cancelled
+    }
+
     // External (mod-provided) quick action: invoke its callback.
     if (typeof action.callback === "function") {
       try {
-        await action.callback({ app: this, actors: selectedActors, event });
+        await action.callback({ app: this, actors: selectedActors, options: promptedOptions, event });
       } catch (err) {
         console.error(`pf1-roll-requests | Quick action '${action.key}' threw:`, err);
         ui.notifications.error(game.i18n.format("RR.Notif.QuickActionFailed", { label: game.i18n.localize(action.label) }));
@@ -268,7 +283,71 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     }
 
     // Built-in declarative quick action.
-    this._executeQuickAction(action, selectedActors ?? []);
+    this._executeQuickAction(action, selectedActors ?? [], promptedOptions);
+  }
+
+  /**
+   * The tokens currently selected on the canvas, as targeted-card entries.
+   *
+   * Keyed by *token* id rather than actor id so several unlinked copies of one
+   * actor each get their own row and result; the actor is resolved at roll time
+   * from `tokenUUID`.
+   *
+   * @param {object} [options]
+   * @param {boolean} [options.npcOnly=false] - Only NPC-type actors (DM Check).
+   * @returns {Array<{id: string, name: string, img: string, tokenUUID: string}>}
+   */
+  static getSelectedTokenTargets({ npcOnly = false } = {}) {
+    return (canvas.tokens?.controlled ?? [])
+      .filter(t => t.actor && (!npcOnly || t.actor.type === "npc"))
+      .map(t => ({
+        id: t.id,
+        name: t.name ?? t.actor.name,
+        img: t.actor.img,
+        tokenUUID: t.document.uuid,
+      }));
+  }
+
+  /**
+   * Ask for a DC and flavor text before a quick action fires. Both fields are
+   * optional — confirming an empty form is the same as never having been asked.
+   *
+   * @param {string} label - The quick action's label (for the title).
+   * @returns {Promise<{dc: number|null, flavor: string}|null>} Null if cancelled.
+   */
+  async _promptQuickOptions(label) {
+    const content = await renderTemplate(
+      `modules/${MODULE_ID}/src/templates/quick-options.html`,
+      { label }
+    );
+
+    const result = await foundry.applications.api.DialogV2.wait({
+      window: { title: game.i18n.format("RR.Dialog.QuickOptionsTitle", { label }), icon: "fa-solid fa-sliders" },
+      classes: ["pf1-roll-requests"],
+      position: { width: 340 },
+      content,
+      buttons: [
+        {
+          action: "ok",
+          label: game.i18n.localize("RR.Common.OK"),
+          icon: "fas fa-dice-d20",
+          default: true,
+          callback: (_event, _button, dialog) => {
+            const root = dialog.element;
+            const raw = (root.querySelector("#arr-quick-dc")?.value ?? "").trim();
+            const dc = raw === "" ? null : Number(raw);
+            return {
+              dc: Number.isFinite(dc) ? dc : null,
+              flavor: (root.querySelector("#arr-quick-flavor")?.value ?? "").trim(),
+            };
+          },
+        },
+        { action: "cancel", label: game.i18n.localize("RR.Common.Cancel"), icon: "fas fa-times" },
+      ],
+      rejectClose: false,
+    });
+
+    return (result && typeof result === "object") ? result : null;
   }
 
   /**
@@ -341,19 +420,24 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
    *
    * @param {QuickAction} action
    * @param {Array<{id: string, name: string, img: string}>} selectedActors
+   * @param {{dc: number|null, flavor: string}|null} [prompted] - Values from the
+   *   DC/flavor popup, when the action asked for one. Blank fields fall back to
+   *   the baked-in config.
    */
-  _executeQuickAction(action, selectedActors) {
+  _executeQuickAction(action, selectedActors, prompted = null) {
     const cfg = action.config;
     const isTargeted = cfg.mode === "targeted";
 
     const requestData = {
       mode: cfg.mode,
-      dc: cfg.dc,
+      dc: prompted?.dc ?? cfg.dc,
       showDC: cfg.showDC,
       showResults: cfg.showResults,
       rollMode: cfg.rollMode,
-      flavor: "",
+      flavor: prompted?.flavor ?? "",
       includeAid: cfg.includeAid,
+      // Token-derived cards get their own check-kind tag, as Token Check does.
+      isTokenCheck: action.useSelectedTokens ?? false,
       ignoreAidRequirement: cfg.ignoreAidRequirement ?? false,
       allowUnpassable: cfg.allowUnpassable ?? false,
       request: { ...action.request, name: game.i18n.localize(action.request.name) },
@@ -544,23 +628,18 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     }
 
     const isDMCheck = this.checkMode === "dmcheck";
+    const isTokenCheck = this.checkMode === "token";
 
-    // DM Check: gather the GM's currently-selected NPC tokens. Keyed by *token*
-    // id (not actor id) so multiple unlinked copies of one actor each get their
-    // own row/result; the actor is resolved at roll time via tokenUUID.
-    let dmTargets;
-    if (isDMCheck) {
-      const npcTokens = (canvas.tokens?.controlled ?? []).filter(t => t.actor?.type === "npc");
-      if (npcTokens.length === 0) {
-        ui.notifications.warn(game.i18n.localize("RR.Notif.SelectNPCTokens"));
+    // Both modes read the canvas selection: DM Check auto-rolls its NPCs, while
+    // Token Check posts the same per-target card a Selection Check does and waits
+    // for whoever owns each token.
+    let tokenTargets;
+    if (isDMCheck || isTokenCheck) {
+      tokenTargets = RollRequestDialog.getSelectedTokenTargets({ npcOnly: isDMCheck });
+      if (tokenTargets.length === 0) {
+        ui.notifications.warn(game.i18n.localize(isDMCheck ? "RR.Notif.SelectNPCTokens" : "RR.Notif.SelectTokens"));
         return;
       }
-      dmTargets = npcTokens.map(t => ({
-        id: t.id,
-        name: t.name ?? t.actor.name,
-        img: t.actor.img,
-        tokenUUID: t.document.uuid,
-      }));
     }
 
     // Force includeAid off for DM checks, and for dice-type and save-type requests
@@ -574,8 +653,11 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       return;
     }
 
-    // Both Selection and DM checks render as per-actor "targeted" cards.
-    const isTargeted = isDMCheck || (this.checkMode === "selection" && this.selectedRequest.type !== "dice");
+    // Selection, DM and Token checks all render as per-actor "targeted" cards.
+    // A Selection Check of raw dice has no per-actor component, so it collapses
+    // to a single check; a Token Check does not — its whole point is the tokens.
+    const isTargeted = isDMCheck || isTokenCheck
+      || (this.checkMode === "selection" && this.selectedRequest.type !== "dice");
     const mode = isTargeted ? "targeted" : this.checkMode === "selection" ? "single" : this.checkMode;
 
     const requestData = {
@@ -590,12 +672,13 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       ignoreAidRequirement: includeAid ? this.ignoreAidRequirement : false,
       allowUnpassable: this.allowUnpassable,
       isDMCheck,
+      isTokenCheck,
       request: this.selectedRequest,
       rolledActors: {},
       aidResults: {},
       aidTotal: 0,
       // Targeted mode data
-      targetedActors: isDMCheck ? dmTargets : isTargeted ? this.targetedActors : [],
+      targetedActors: (isDMCheck || isTokenCheck) ? tokenTargets : isTargeted ? this.targetedActors : [],
       actorResults: {},
       actorAidResults: {},
       usedActorIds: [],

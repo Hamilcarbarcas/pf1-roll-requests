@@ -483,6 +483,7 @@ export class RollRequestChat {
       targetedActors: flags.targetedActors ?? [],
       isSaveRequest: flags.isSaveRequest ?? false,
       isSelection: flags.selectFromTable ?? false,
+      targetsOnly: flags.targetsOnly ?? false,
       locked: flags.locked ?? false,
       checkKindLabel: RollRequestChat._getCheckKindLabel(flags),
       description: flags.description ?? "",
@@ -607,6 +608,12 @@ export class RollRequestChat {
 
     // Bind click-to-expand on result rows
     RollRequestChat._bindExpandToggle(card);
+
+    // A sole target's dropdown opens by itself — after the results above, whose
+    // chevron it has to leave pointing the right way.
+    if (flags.mode === "targeted" && flags.isSaveRequest) {
+      await RollRequestChat._autoExpandSoleTarget(card, flags);
+    }
   }
 
   /**
@@ -923,7 +930,7 @@ export class RollRequestChat {
           // Roll All / Roll NPCs bulk buttons at top of card body. A locked card
           // accepts no further results, so they are omitted — the token-selection
           // footer below still is, since selecting tokens is not a result.
-          if (!flags.locked) {
+          if (!flags.locked && !flags.targetsOnly) {
             const bulkBtns = document.createElement("div");
             bulkBtns.className = "arr-save-bulk-btns flexrow";
             bulkBtns.innerHTML =
@@ -937,13 +944,15 @@ export class RollRequestChat {
             });
           }
 
-          // Select All / Passed / Failed footer
+          // Select All / Passed / Failed footer. Passed and Failed partition a
+          // set of results, so a card that never gets any keeps only Select All.
           const selectFooter = document.createElement("div");
           selectFooter.className = "arr-save-select-footer flexrow";
           selectFooter.innerHTML =
             `<button type="button" class="arr-save-sel-btn" data-select="all">${game.i18n.localize("RR.Bulk.SelectAll")}</button>` +
-            `<button type="button" class="arr-save-sel-btn" data-select="passed">${game.i18n.localize("RR.Bulk.SelectPassed")}</button>` +
-            `<button type="button" class="arr-save-sel-btn" data-select="failed">${game.i18n.localize("RR.Bulk.SelectFailed")}</button>`;
+            (flags.targetsOnly ? "" :
+              `<button type="button" class="arr-save-sel-btn" data-select="passed">${game.i18n.localize("RR.Bulk.SelectPassed")}</button>` +
+              `<button type="button" class="arr-save-sel-btn" data-select="failed">${game.i18n.localize("RR.Bulk.SelectFailed")}</button>`);
           card.appendChild(selectFooter);
           selectFooter.querySelectorAll("[data-select]").forEach(btn => {
             btn.addEventListener("click", (e) => {
@@ -960,19 +969,55 @@ export class RollRequestChat {
       RollRequestChat._bindTargetedExpand(card, flags);
     }
 
-    // Blind-roll targeted (non-save): GM-only Roll All button. A selection card
-    // has no roll to bulk-fire — every result is somebody's deliberate choice.
-    if (showControls && game.user.isGM && flags.rollMode === "blindroll" && !flags.isSaveRequest && !flags.selectFromTable && !flags.locked) {
+    // Targeted (non-save): GM-only bulk roll. Useful on any such card, one target
+    // included — the per-row button opens the roll dialog, these never do. Roll
+    // NPCs only earns its place once there is a mixed list to partition. A
+    // selection card has no roll to bulk-fire: every result is somebody's choice.
+    const targetCount = flags.targetedActors?.length ?? 0;
+    if (showControls && game.user.isGM && targetCount > 0
+      && !flags.isSaveRequest && !flags.selectFromTable && !flags.targetsOnly && !flags.locked) {
       const bulkBtns = document.createElement("div");
       bulkBtns.className = "arr-save-bulk-btns flexrow";
-      bulkBtns.innerHTML = `<button type="button" class="arr-save-sel-btn">${game.i18n.localize("RR.Bulk.RollAll")}</button>`;
+      bulkBtns.innerHTML =
+        `<button type="button" class="arr-save-sel-btn" data-bulk="all">${game.i18n.localize("RR.Bulk.RollAll")}</button>`
+        + (targetCount > 1
+          ? `<button type="button" class="arr-save-sel-btn" data-bulk="npcs">${game.i18n.localize("RR.Bulk.RollNPCs")}</button>`
+          : "");
       const body = card.querySelector(".arr-card-body");
       if (body) body.insertBefore(bulkBtns, body.firstChild);
       else card.prepend(bulkBtns);
-      RollRequestChat._bindBusyClick(
-        bulkBtns.querySelector("button"),
-        () => RollRequestChat._bulkRollTargeted(message, { slot })
-      );
+      bulkBtns.querySelectorAll("[data-bulk]").forEach(btn => {
+        RollRequestChat._bindBusyClick(
+          btn,
+          () => RollRequestChat._bulkRollTargeted(message, { slot, which: btn.dataset.bulk })
+        );
+      });
+    }
+
+    // Portrait/name hover → highlight the token on canvas
+    RollRequestChat._bindTargetedTokenHover(card, flags);
+  }
+
+  /**
+   * Highlight a row's token on canvas while the pointer is over its portrait or
+   * name, matching PF1's own target boxes (pf1.utils.chat.addTargetCallbacks).
+   * `hoverOutOthers: false` so this doesn't clear a hover the user set on canvas.
+   */
+  static _bindTargetedTokenHover(card, flags) {
+    for (const block of card.querySelectorAll(".arr-targeted-block")) {
+      const entry = flags.targetedActors?.find(t => t.id === block.dataset.actorId);
+      if (!entry?.tokenUUID) continue;
+
+      const targets = block.querySelectorAll(".arr-targeted-actor-row .arr-actor-img, .arr-targeted-actor-row .arr-actor-name");
+      if (!targets.length) continue;
+
+      // Resolved per event, not once: the token may not be on the current scene
+      // when the card renders, and may be by the time it is hovered.
+      const token = () => fromUuidSync(entry.tokenUUID)?.object;
+      for (const el of targets) {
+        el.addEventListener("pointerenter", (ev) => token()?._onHoverIn(ev, { hoverOutOthers: false }), { passive: true });
+        el.addEventListener("pointerleave", (ev) => token()?._onHoverOut(ev), { passive: true });
+      }
     }
   }
 
@@ -986,41 +1031,99 @@ export class RollRequestChat {
   // non-GMs, so anything present here is OBSERVER+ (or GM) — no extra check.
   static _bindTargetedExpand(card, flags) {
     for (const block of card.querySelectorAll(".arr-targeted-block")) {
-      const actorId = block.dataset.actorId;
       const row = block.querySelector(".arr-targeted-actor-row");
       const panel = block.querySelector(":scope > .arr-targeted-defenses");
       if (!row || !panel) continue;
-      const entry = flags.targetedActors?.find(t => t.id === actorId);
-
-      const rotateIcons = (open) => {
-        for (const icon of block.querySelectorAll(".arr-defenses-icon, .arr-targeted-actor-row .arr-expand-icon")) {
-          icon.classList.toggle("fa-chevron-up", open);
-          icon.classList.toggle("fa-chevron-down", !open);
-        }
-      };
+      const entry = flags.targetedActors?.find(t => t.id === block.dataset.actorId);
 
       row.style.cursor = "pointer";
       row.addEventListener("click", async (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-
-        // Build defenses once, lazily, from the live actor on this client.
-        if (!panel.dataset.loaded) {
-          const actor = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID)?.actor : null;
-          if (!actor) return void ui.notifications.warn(game.i18n.localize("RR.Notif.LoadDefensesFailed"));
-          try {
-            panel.innerHTML = await RollRequestChat._buildDefensesPanel(actor);
-            panel.dataset.loaded = "1";
-          } catch (err) {
-            console.error("pf1-roll-requests | failed to build defenses panel", err);
-            return;
-          }
-        }
-
-        const open = block.classList.toggle("arr-expanded");
-        rotateIcons(open);
+        if (!await RollRequestChat._loadDefensesPanel(panel, entry)) return;
+        RollRequestChat._setBlockExpanded(block, !block.classList.contains("arr-expanded"));
       });
     }
+  }
+
+  /**
+   * Open the dropdown of a list that has only one row: there is nothing to scan
+   * past, so the reader would be clicking for the only thing on the card.
+   *
+   * Runs after the card's results are in the DOM — the row's chevron is part of
+   * an injected result, so expanding before that leaves it pointing the wrong
+   * way. Counts rendered blocks rather than targets, so a player seeing one of
+   * three rows gets the same treatment as a GM seeing a one-target card.
+   */
+  static async _autoExpandSoleTarget(card, flags) {
+    const blocks = card.querySelectorAll(".arr-targeted-block");
+    if (blocks.length !== 1) return;
+
+    const block = blocks[0];
+    if (block.classList.contains("arr-expanded")) return;
+    const panel = block.querySelector(":scope > .arr-targeted-defenses");
+    if (!panel) return;
+
+    const entry = flags.targetedActors?.find(t => t.id === block.dataset.actorId);
+    // Quiet: nobody asked for this one, so a token that has left the scene
+    // should not produce a notification.
+    if (!await RollRequestChat._loadDefensesPanel(panel, entry, { quiet: true })) return;
+    RollRequestChat._setBlockExpanded(block, true);
+  }
+
+  /** Toggle a targeted block open or closed, chevrons included. */
+  static _setBlockExpanded(block, open) {
+    block.classList.toggle("arr-expanded", open);
+    for (const icon of block.querySelectorAll(".arr-defenses-icon, .arr-targeted-actor-row .arr-expand-icon")) {
+      icon.classList.toggle("fa-chevron-up", open);
+      icon.classList.toggle("fa-chevron-down", !open);
+    }
+  }
+
+  /**
+   * Fill a block's defenses panel, once, from the live actor on this client.
+   * Returns whether the panel is usable.
+   */
+  static async _loadDefensesPanel(panel, entry, { quiet = false } = {}) {
+    if (panel.dataset.loaded) return true;
+
+    const actor = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID)?.actor : null;
+    if (!actor) {
+      if (!quiet) ui.notifications.warn(game.i18n.localize("RR.Notif.LoadDefensesFailed"));
+      return false;
+    }
+    try {
+      panel.innerHTML = await RollRequestChat._buildDefensesPanel(actor);
+      panel.dataset.loaded = "1";
+    } catch (err) {
+      console.error(`${MODULE_ID} | failed to build defenses panel`, err);
+      return false;
+    }
+    RollRequestChat._bindDefenseCardLink(panel, actor, entry);
+    return true;
+  }
+
+  /**
+   * Make the panel's "Defenses" heading post PF1's own defenses card to chat,
+   * matching the AC box on PF1's target list (pf1.utils.chat.targetACClick).
+   * `displayDefenseCard` refuses without ownership, so an observer who could not
+   * use it gets a plain heading rather than a click that only warns.
+   */
+  static _bindDefenseCardLink(panel, actor, entry) {
+    const header = panel.querySelector(".arr-def-header");
+    if (!header || !actor.isOwner) return;
+
+    header.classList.add("arr-def-post");
+    header.dataset.tooltip = game.i18n.localize("RR.Def.PostCard");
+    header.insertAdjacentHTML("beforeend", `<i class="fa-solid fa-comment-dots arr-def-post-icon" inert></i>`);
+    header.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      // Pass the token so the card names the row the reader clicked; whispered
+      // to the clicker, as PF1's own target-list AC box does.
+      const token = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID) : null;
+      actor.displayDefenseCard({ rollMode: "selfroll", token });
+    });
   }
 
   // Build the compact defenses panel HTML for an actor. Mirrors the data
@@ -1059,7 +1162,27 @@ export class RollRequestChat {
     const sr = sys.attributes?.sr?.total;
 
     const sign = (n) => (Number(n) >= 0 ? `+${n}` : `${n}`);
-    const stat = (label, val) =>
+    // Icons match PF1's own target boxes (templates/chat/parts/attack-roll-targets.hbs)
+    // so the same glyph means the same defense in both places. PF1 can give CMD
+    // the AC shield because it renders one block or the other; both share a panel
+    // here, so the CMD pair takes a leading fist as its family marker and keeps
+    // PF1's shield/shoe-prints as the second glyph.
+    const icon = (...cls) => `<span class="arr-def-glyphs">${cls.map(c => `<i class="${c}" inert></i>`).join("")}</span>`;
+    const ICON = {
+      ac:    icon("fa-solid fa-shield-alt"),
+      touch: icon("fa-solid fa-hand-point-up"),
+      ff:    icon("fa-solid fa-shoe-prints"),
+      cmd:   icon("fa-solid fa-hand-fist", "fa-solid fa-shield-alt"),
+      ffcmd: icon("fa-solid fa-hand-fist", "fa-solid fa-shoe-prints"),
+      fort:  icon("icon-pf icon-heart-plus"),
+      ref:   icon("icon-pf icon-divert"),
+      will:  icon("icon-pf icon-brain"),
+    };
+    // Label survives as the tooltip — the glyph carries it on screen.
+    const stat = (label, val, glyph) =>
+      `<span class="arr-def-stat" data-tooltip="${label}">${glyph}<span class="arr-def-val">${val}</span></span>`;
+    // SR has no system glyph, so it keeps a written label.
+    const statLabelled = (label, val) =>
       `<span class="arr-def-stat"><span class="arr-def-label">${label}</span><span class="arr-def-val">${val}</span></span>`;
     const noteGroup = (label, notes) => {
       if (!notes?.length) return "";
@@ -1072,16 +1195,16 @@ export class RollRequestChat {
     let html = `<div class="arr-defenses-content">`;
     html += `<div class="arr-def-header">${game.i18n.localize("RR.Def.Defenses")}</div>`;
 
-    html += `<div class="arr-def-row">${stat(game.i18n.localize("RR.Def.AC"), ac.normal?.total ?? 0)}${stat(game.i18n.localize("RR.Def.Touch"), ac.touch?.total ?? 0)}${stat(game.i18n.localize("RR.Def.FF"), ac.flatFooted?.total ?? 0)}</div>`;
+    html += `<div class="arr-def-row">${stat(game.i18n.localize("RR.Def.AC"), ac.normal?.total ?? 0, ICON.ac)}${stat(game.i18n.localize("RR.Def.Touch"), ac.touch?.total ?? 0, ICON.touch)}${stat(game.i18n.localize("RR.Def.FF"), ac.flatFooted?.total ?? 0, ICON.ff)}</div>`;
     html += noteGroup(game.i18n.localize("RR.Def.ACNotes"), acNotes);
 
-    let cmdRow = `${stat(game.i18n.localize("RR.Def.CMD"), cmd.total ?? 0)}${stat(game.i18n.localize("RR.Def.FFCMD"), cmd.flatFootedTotal ?? 0)}`;
-    if (sr) cmdRow += stat(game.i18n.localize("RR.Def.SR"), sr);
+    let cmdRow = `${stat(game.i18n.localize("RR.Def.CMD"), cmd.total ?? 0, ICON.cmd)}${stat(game.i18n.localize("RR.Def.FFCMD"), cmd.flatFootedTotal ?? 0, ICON.ffcmd)}`;
+    if (sr) cmdRow += statLabelled(game.i18n.localize("RR.Def.SR"), sr);
     html += `<div class="arr-def-row">${cmdRow}</div>`;
     html += noteGroup(game.i18n.localize("RR.Def.CMDNotes"), cmdNotes);
     if (sr) html += noteGroup(game.i18n.localize("RR.Def.SRNotes"), srNotes);
 
-    html += `<div class="arr-def-row">${stat(game.i18n.localize("RR.Def.Fort"), sign(saves.fort?.total ?? 0))}${stat(game.i18n.localize("RR.Def.Ref"), sign(saves.ref?.total ?? 0))}${stat(game.i18n.localize("RR.Def.Will"), sign(saves.will?.total ?? 0))}</div>`;
+    html += `<div class="arr-def-row">${stat(game.i18n.localize("RR.Def.Fort"), sign(saves.fort?.total ?? 0), ICON.fort)}${stat(game.i18n.localize("RR.Def.Ref"), sign(saves.ref?.total ?? 0), ICON.ref)}${stat(game.i18n.localize("RR.Def.Will"), sign(saves.will?.total ?? 0), ICON.will)}</div>`;
     html += noteGroup(game.i18n.localize("RR.Def.SaveNotes"), saveNotes);
 
     html += noteGroup(game.i18n.localize("RR.Def.DamageReduction"), drNotes);
@@ -1704,8 +1827,9 @@ export class RollRequestChat {
   // ----------------------------------------------------------
 
   static _getCheckKindLabel(flags) {
-    // DM checks render as "targeted" cards but get their own tag.
+    // DM and Token checks render as "targeted" cards but get their own tags.
     if (flags.isDMCheck) return game.i18n.localize("RR.Card.KindDM");
+    if (flags.isTokenCheck) return game.i18n.localize("RR.Card.KindToken");
     // Auto-generated save-request cards are treated as their own thing (they also
     // skip the aggregate line), so we don't tag them with a check-kind label.
     if (flags.isSaveRequest) return "";
@@ -2029,6 +2153,7 @@ export class RollRequestChat {
       targetedActors: flags.targetedActors ?? [],
       isSaveRequest: flags.isSaveRequest ?? false,
       isSelection: flags.selectFromTable ?? false,
+      targetsOnly: flags.targetsOnly ?? false,
       locked: flags.locked ?? false,
       checkKindLabel: RollRequestChat._getCheckKindLabel(flags),
       description: flags.description ?? "",
@@ -2858,7 +2983,7 @@ export class RollRequestChat {
   static async _bulkRollSave(message, which, slot = null) {
     if (!game.user.isGM) return;
     const flags = RollRequestChat._readState(message, slot);
-    if (!flags?.isSaveRequest) return;
+    if (!flags?.isSaveRequest || flags.targetsOnly) return;
 
     for (const target of (flags.targetedActors || [])) {
       const currentFlags = RollRequestChat._readState(message, slot);
@@ -2903,13 +3028,20 @@ export class RollRequestChat {
   }
 
   // ----------------------------------------------------------
-  // Bulk roll for targeted blind-roll cards (non-save)
+  // Bulk roll every unrolled target of a targeted card (non-save), GM-side and
+  // dialog-free. `which` is "all" or "npcs" — the latter leaves anyone an active
+  // player can roll for to roll themselves, as the save card's button does.
   // ----------------------------------------------------------
 
-  static async _bulkRollTargeted(message, { slot = null } = {}) {
+  static async _bulkRollTargeted(message, { slot = null, which = "all" } = {}) {
     if (!game.user.isGM) return;
     const initialFlags = RollRequestChat._readState(message, slot);
     if (!initialFlags?.targetedActors?.length) return;
+    // A target-list card carries no check to roll.
+    if (initialFlags.targetsOnly) {
+      console.warn(`${MODULE_ID} | Bulk roll skipped: card ${message.id} is a target list.`);
+      return;
+    }
     // Nothing to roll on a selection card: each result is a choice a person
     // makes, so there is no sensible value to fill in on their behalf.
     if (initialFlags.selectFromTable) {
@@ -2933,6 +3065,12 @@ export class RollRequestChat {
         tokenId = actor?.getActiveTokens?.()?.[0]?.id ?? null;
       }
       if (!actor) continue;
+
+      if (which === "npcs") {
+        if (actor.type === "character") continue;
+        const playerOwned = game.users.some(u => u.active && !u.isGM && actor.testUserPermission(u, "OWNER"));
+        if (playerOwned) continue;
+      }
 
       let rollResult;
       try {
