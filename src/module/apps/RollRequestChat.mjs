@@ -470,13 +470,21 @@ export class RollRequestChat {
    */
   static _templateData(flags) {
     const requestName = flags.request.name;
+    // The title names the check, the flavor line carries the prose. Titling the
+    // card with the flavor instead printed the same string twice, and on a
+    // targeted card — which has no "Roll <check>" prompt of its own — it left
+    // the card never saying what was being rolled.
+    //
+    // A selection request with no key takes its name *from* the flavor, so the
+    // two can be one string; there the title shows it and the flavor line drops.
+    const flavor = flags.flavor ?? "";
     return {
-      name: flags.flavor || requestName,
+      name: requestName,
       requestName,
       dc: flags.dc,
       showDC: flags.showDC,
       showResults: flags.showResults,
-      flavor: flags.flavor,
+      flavor: flavor === requestName ? "" : flavor,
       includeAid: flags.includeAid,
       // Roll mode display name (shown in GM-only footer)
       modeName: RollRequestChat._getModeName(flags.rollMode, flags.showResults),
@@ -2128,41 +2136,13 @@ export class RollRequestChat {
   // ----------------------------------------------------------
 
   static async _rebuildCardContent(flags) {
-    let template;
-    if (flags.mode === "single") {
-      template = `modules/${MODULE_ID}/src/templates/chat-card-single.html`;
-    } else if (flags.mode === "targeted") {
-      template = `modules/${MODULE_ID}/src/templates/chat-card-targeted.html`;
-    } else {
-      template = `modules/${MODULE_ID}/src/templates/chat-card-multi.html`;
-    }
-
-    const requestName = flags.request.name;
-    const name = flags.flavor || requestName;
-    const modeName = RollRequestChat._getModeName(flags.rollMode, flags.showResults);
-
-    const templateData = {
-      name,
-      requestName,
-      dc: flags.dc,
-      showDC: flags.showDC,
-      showResults: flags.showResults,
-      flavor: flags.flavor,
-      includeAid: flags.includeAid,
-      modeName,
-      targetedActors: flags.targetedActors ?? [],
-      isSaveRequest: flags.isSaveRequest ?? false,
-      isSelection: flags.selectFromTable ?? false,
-      targetsOnly: flags.targetsOnly ?? false,
-      locked: flags.locked ?? false,
-      checkKindLabel: RollRequestChat._getCheckKindLabel(flags),
-      description: flags.description ?? "",
-      tableHtml: RollRequestChat._renderResultTable(flags),
-      summaryHtml: RollRequestChat._renderSummary(flags),
-      aggregateHtml: RollRequestChat._renderAggregate(flags),
-    };
-
-    let html = await renderTemplate(template, templateData);
+    // Same template and same context as the initial post — a card that changed
+    // only between those two would be a card whose header rewrites itself on the
+    // first roll.
+    const html = await renderTemplate(
+      RollRequestChat._cardTemplate(flags.mode),
+      RollRequestChat._templateData(flags)
+    );
 
     // Parse the HTML and inject results
     const parser = new DOMParser();

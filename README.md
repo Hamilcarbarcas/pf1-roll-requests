@@ -27,7 +27,7 @@ The dialog lets you select:
 - **Result visibility** — Whether pass/fail indicators are shown to players
 - **Aid Another** — Whether other players can aid (single-check mode only; forced off for saves and dice)
   - **Ignore aid requirement** — By default an aider must themselves be able to succeed on the check to aid. Tick this to let anyone attempt Aid Another regardless (also implied by *Allow un-passable checks*).
-- **Flavor text** — Optional label shown on the chat card
+- **Flavor text** — Optional line shown on the chat card beneath the title. The title itself always names the check being rolled.
 
 #### Prompt Actors (Selection Check)
 

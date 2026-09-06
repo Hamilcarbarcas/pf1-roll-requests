@@ -201,3 +201,13 @@ After:
 - `RR.Notif.SelectTokens` — "Select one or more tokens on the canvas first."
 - `RR.Quick.Perception` — "Quick Perception"
 - `RR.Card.KindToken` — "Token Check"
+
+### `README.md` — Roll Request Dialog, flavor text (same date)
+
+Before:
+
+> - **Flavor text** — Optional label shown on the chat card
+
+After:
+
+> - **Flavor text** — Optional line shown on the chat card beneath the title. The title itself always names the check being rolled.
