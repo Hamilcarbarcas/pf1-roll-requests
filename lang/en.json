@@ -182,6 +182,7 @@
   "RR.Def.Fort": "Fortitude",
   "RR.Def.Ref": "Reflex",
   "RR.Def.Will": "Will",
+  "RR.Def.RollSave": "{save} — click to roll",
   "RR.Def.SaveNotes": "Save Notes",
   "RR.Def.DamageReduction": "Damage Reduction",
   "RR.Def.EnergyResistance": "Energy Resistance",

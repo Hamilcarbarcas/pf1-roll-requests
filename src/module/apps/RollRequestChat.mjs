@@ -1108,6 +1108,7 @@ export class RollRequestChat {
       return false;
     }
     RollRequestChat._bindDefenseCardLink(panel, actor, entry);
+    RollRequestChat._bindSaveRollLinks(panel, actor, entry);
     return true;
   }
 
@@ -1132,6 +1133,48 @@ export class RollRequestChat {
       const token = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID) : null;
       actor.displayDefenseCard({ rollMode: "selfroll", token });
     });
+  }
+
+  /**
+   * Make the three save stats roll that save for the row's token, posting PF1's
+   * own save card. Gated on ownership like the heading above: rollSavingThrow
+   * only warns without it, so an observer gets a plain figure rather than a
+   * click that cannot work.
+   *
+   * NPCs roll straight through, per the convention for actors no player drives;
+   * a player-owned actor gets PF1's roll dialog so its owner can add situational
+   * bonuses. Shift inverts that either way, as it does elsewhere in PF1.
+   */
+  static _bindSaveRollLinks(panel, actor, entry) {
+    if (!actor.isOwner) return;
+
+    for (const el of panel.querySelectorAll(".arr-def-stat[data-save]")) {
+      const saveId = el.dataset.save;
+      el.classList.add("arr-def-rollable");
+      // The builder already put the localized save name here; extend it rather
+      // than keeping a second copy of the label keys.
+      el.dataset.tooltip = game.i18n.format("RR.Def.RollSave", { save: el.dataset.tooltip });
+
+      el.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (el.classList.contains("arr-btn-busy")) return;
+
+        const skipDialog = ev.shiftKey ? actor.hasPlayerOwner : !actor.hasPlayerOwner;
+        // Resolved per click: the token may have left the scene since the panel
+        // was built, and the roll is still worth making without it.
+        const token = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID) : null;
+
+        el.classList.add("arr-btn-busy");
+        try {
+          await actor.rollSavingThrow(saveId, { token, skipDialog });
+        } catch (err) {
+          console.error(`${MODULE_ID} | save roll from defenses panel failed`, err);
+        } finally {
+          el.classList.remove("arr-btn-busy");
+        }
+      });
+    }
   }
 
   // Build the compact defenses panel HTML for an actor. Mirrors the data
@@ -1186,9 +1229,14 @@ export class RollRequestChat {
       ref:   icon("icon-pf icon-divert"),
       will:  icon("icon-pf icon-brain"),
     };
+    // Contrast tone for a stat's glyph and value. Three groups, constant down
+    // the panel: red for AC / CMD / Fortitude, blue for touch AC / Will, green
+    // for the flat-footed pair / Reflex. SR is left untoned.
     // Label survives as the tooltip — the glyph carries it on screen.
-    const stat = (label, val, glyph) =>
-      `<span class="arr-def-stat" data-tooltip="${label}">${glyph}<span class="arr-def-val">${val}</span></span>`;
+    // `save` marks a stat _bindSaveRollLinks can turn into a roll — the binding
+    // decides whether this viewer gets the affordance, not the builder.
+    const stat = (label, val, glyph, tone, save) =>
+      `<span class="arr-def-stat${tone ? ` arr-def-tone-${tone}` : ""}"${save ? ` data-save="${save}"` : ""} data-tooltip="${label}">${glyph}<span class="arr-def-val">${val}</span></span>`;
     // SR has no system glyph, so it keeps a written label.
     const statLabelled = (label, val) =>
       `<span class="arr-def-stat"><span class="arr-def-label">${label}</span><span class="arr-def-val">${val}</span></span>`;
@@ -1199,25 +1247,38 @@ export class RollRequestChat {
         .join("");
       return `<div class="arr-def-notes"><span class="arr-def-notes-label">${label}</span><div class="arr-def-tags">${tags}</div></div>`;
     };
+    // The band between two stat rows. Its note groups share one wrapper so the
+    // row spacing is a floor they eat into rather than a margin they add to;
+    // `required` keeps that floor when there are no notes to fill it.
+    const gap = (required, ...groups) => {
+      const inner = groups.join("");
+      if (!inner && !required) return "";
+      return `<div class="arr-def-gap">${inner}</div>`;
+    };
 
     let html = `<div class="arr-defenses-content">`;
     html += `<div class="arr-def-header">${game.i18n.localize("RR.Def.Defenses")}</div>`;
 
-    html += `<div class="arr-def-row">${stat(game.i18n.localize("RR.Def.AC"), ac.normal?.total ?? 0, ICON.ac)}${stat(game.i18n.localize("RR.Def.Touch"), ac.touch?.total ?? 0, ICON.touch)}${stat(game.i18n.localize("RR.Def.FF"), ac.flatFooted?.total ?? 0, ICON.ff)}</div>`;
-    html += noteGroup(game.i18n.localize("RR.Def.ACNotes"), acNotes);
+    html += `<div class="arr-def-row arr-def-row-ac">${stat(game.i18n.localize("RR.Def.AC"), ac.normal?.total ?? 0, ICON.ac, "red")}${stat(game.i18n.localize("RR.Def.Touch"), ac.touch?.total ?? 0, ICON.touch, "blue")}${stat(game.i18n.localize("RR.Def.FF"), ac.flatFooted?.total ?? 0, ICON.ff, "green")}</div>`;
+    html += gap(true, noteGroup(game.i18n.localize("RR.Def.ACNotes"), acNotes));
 
-    let cmdRow = `${stat(game.i18n.localize("RR.Def.CMD"), cmd.total ?? 0, ICON.cmd)}${stat(game.i18n.localize("RR.Def.FFCMD"), cmd.flatFootedTotal ?? 0, ICON.ffcmd)}`;
+    let cmdRow = `${stat(game.i18n.localize("RR.Def.CMD"), cmd.total ?? 0, ICON.cmd, "red")}${stat(game.i18n.localize("RR.Def.FFCMD"), cmd.flatFootedTotal ?? 0, ICON.ffcmd, "green")}`;
     if (sr) cmdRow += statLabelled(game.i18n.localize("RR.Def.SR"), sr);
-    html += `<div class="arr-def-row">${cmdRow}</div>`;
-    html += noteGroup(game.i18n.localize("RR.Def.CMDNotes"), cmdNotes);
-    if (sr) html += noteGroup(game.i18n.localize("RR.Def.SRNotes"), srNotes);
+    html += `<div class="arr-def-row arr-def-row-cmd">${cmdRow}</div>`;
+    html += gap(
+      true,
+      noteGroup(game.i18n.localize("RR.Def.CMDNotes"), cmdNotes),
+      sr ? noteGroup(game.i18n.localize("RR.Def.SRNotes"), srNotes) : "",
+    );
 
-    html += `<div class="arr-def-row">${stat(game.i18n.localize("RR.Def.Fort"), sign(saves.fort?.total ?? 0), ICON.fort)}${stat(game.i18n.localize("RR.Def.Ref"), sign(saves.ref?.total ?? 0), ICON.ref)}${stat(game.i18n.localize("RR.Def.Will"), sign(saves.will?.total ?? 0), ICON.will)}</div>`;
-    html += noteGroup(game.i18n.localize("RR.Def.SaveNotes"), saveNotes);
-
-    html += noteGroup(game.i18n.localize("RR.Def.DamageReduction"), drNotes);
-    html += noteGroup(game.i18n.localize("RR.Def.EnergyResistance"), erNotes);
-    html += noteGroup(game.i18n.localize("RR.Def.Conditions"), conditions);
+    html += `<div class="arr-def-row arr-def-row-save">${stat(game.i18n.localize("RR.Def.Fort"), sign(saves.fort?.total ?? 0), ICON.fort, "red", "fort")}${stat(game.i18n.localize("RR.Def.Ref"), sign(saves.ref?.total ?? 0), ICON.ref, "green", "ref")}${stat(game.i18n.localize("RR.Def.Will"), sign(saves.will?.total ?? 0), ICON.will, "blue", "will")}</div>`;
+    html += gap(
+      false,
+      noteGroup(game.i18n.localize("RR.Def.SaveNotes"), saveNotes),
+      noteGroup(game.i18n.localize("RR.Def.DamageReduction"), drNotes),
+      noteGroup(game.i18n.localize("RR.Def.EnergyResistance"), erNotes),
+      noteGroup(game.i18n.localize("RR.Def.Conditions"), conditions),
+    );
 
     html += `</div>`;
     return html;

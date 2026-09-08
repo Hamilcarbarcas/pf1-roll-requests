@@ -946,23 +946,38 @@
   font-size: 11px;
   padding: 2px 0 2px 34px;
   width: 100%;
+
+  /* Stat-row scale. Governs the AC/CMD/save values and their glyphs only —
+     the note tags below stay at the container's 11px. Single knob to tune. */
+  --arr-def-stat-size: 18px;
+  --arr-def-stat-label-size: 12px;
+
+  /* Floor for the space between two stat rows. Notes sitting between them eat
+     into it rather than adding to it — see .arr-def-gap. */
+  --arr-def-row-gap: 20px;
+
+  /* Outline width on the coloured stats. 0px removes the outline and leaves the
+     colours, which are dark enough to carry on their own. */
+  --arr-def-outline: 1px;
 }
 
 .arr-targeted-block.arr-expanded > .arr-targeted-defenses {
   display: block;
 }
 
+/* No gap of its own: the spacing between stat rows is owned by .arr-def-gap,
+   which cannot enforce a floor if the container adds to it. */
 .arr-defenses-content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 
 .arr-def-header {
   font-weight: bold;
   font-size: 11px;
   border-bottom: 1px solid #ccc;
-  margin-bottom: 1px;
+  margin-bottom: 4px;
 }
 
 /* Heading posts PF1's own defenses card. Only added for actors the viewer owns
@@ -988,18 +1003,109 @@
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  column-gap: 12px;
+  column-gap: 18px;
   row-gap: 1px;
-  padding: 1px 4px;
+  padding: 2px 6px;
   border: 1px solid #c9c9c9;
   border-radius: 3px;
   background: rgba(0, 0, 0, 0.04);
 }
 
+/* The band between two stat rows, holding whatever notes belong to the row
+   above. Its min-height is a floor, not a margin: an empty band is still
+   --arr-def-row-gap tall, and a band taller than that keeps its own height, so
+   notes never push the rows further apart than a noteless panel does. Emitted
+   between every pair of rows; omitted after the last row when it has no notes,
+   which would otherwise leave dead space at the foot of the panel. */
+.arr-def-gap {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--arr-def-row-gap, 20px);
+  /* Padding keeps tall notes off the row borders; border-box so it counts
+     inside the floor rather than adding to it. */
+  box-sizing: border-box;
+  padding: 2px 0;
+}
+
 .arr-def-stat {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+}
+
+/* A save the viewer can roll. The cue is an underline rather than a background
+   or a ring: the toned stats carry a filter, which would outline a background
+   of their own along with the glyphs, and the cardinal-only keyline notches the
+   corners of anything rectangular. */
+.pf1-roll-requests .arr-def-rollable {
+  cursor: pointer;
+}
+
+.pf1-roll-requests .arr-def-rollable:hover .arr-def-val {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Contrast tones for a stat's glyph and value. Three groups: red for AC / CMD /
+   Fortitude, blue for touch AC / Will, green for the flat-footed pair / Reflex.
+   Dark enough to stand on the chat background unaided, so dropping
+   --arr-def-outline to 0px leaves them legible. These are the saves row; the
+   rows above take darker steps of the same hues below. */
+.pf1-roll-requests .arr-def-tone-red {
+  --arr-def-tone: #c62828;
+}
+
+.pf1-roll-requests .arr-def-tone-blue {
+  --arr-def-tone: #1565c0;
+}
+
+.pf1-roll-requests .arr-def-tone-green {
+  --arr-def-tone: #2e7d32;
+}
+
+/* Depth separates the three rows, hue still names the defense axis within one:
+   AC darkest, CMD a step above it, saves at full strength. Picked by hand
+   rather than mixed toward black, which dulls the hue as it darkens — the blue
+   turns to slate well before it reads as dark. Held off the black keyline: a
+   darker AC row than this stops being told apart from its own outline. */
+.pf1-roll-requests .arr-def-row-ac .arr-def-tone-red {
+  --arr-def-tone: #8b1c1c;
+}
+
+.pf1-roll-requests .arr-def-row-ac .arr-def-tone-blue {
+  --arr-def-tone: #0f4786;
+}
+
+.pf1-roll-requests .arr-def-row-ac .arr-def-tone-green {
+  --arr-def-tone: #205823;
+}
+
+.pf1-roll-requests .arr-def-row-cmd .arr-def-tone-red {
+  --arr-def-tone: #a62222;
+}
+
+.pf1-roll-requests .arr-def-row-cmd .arr-def-tone-blue {
+  --arr-def-tone: #1255a1;
+}
+
+.pf1-roll-requests .arr-def-row-cmd .arr-def-tone-green {
+  --arr-def-tone: #27692a;
+}
+
+/* Black keyline on the toned stats. Four zero-blur drop-shadows rather than
+   -webkit-text-stroke, which reaches glyphs only: the three save icons are
+   mask-painted SVGs, and a filter outlines the rendered shape whatever painted
+   it. Cardinal offsets only, so keep the width low — diagonals thin out. */
+.pf1-roll-requests .arr-def-tone-red,
+.pf1-roll-requests .arr-def-tone-blue,
+.pf1-roll-requests .arr-def-tone-green {
+  filter:
+    drop-shadow(var(--arr-def-outline, 1px) 0 0 #000)
+    drop-shadow(calc(var(--arr-def-outline, 1px) * -1) 0 0 #000)
+    drop-shadow(0 var(--arr-def-outline, 1px) 0 #000)
+    drop-shadow(0 calc(var(--arr-def-outline, 1px) * -1) 0 #000);
 }
 
 /* A stat's glyph group. Usually one icon; the CMD pair is two, held tighter to
@@ -1007,34 +1113,41 @@
 .arr-def-glyphs {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
   flex: 0 0 auto;
 }
 
 /* Font Awesome glyphs (AC / touch / flat-footed / CMD) */
 .pf1-roll-requests .arr-def-glyphs > i.fa-solid {
-  font-size: 11px;
-  color: #555;
+  font-size: var(--arr-def-stat-size, 11px);
+  color: var(--arr-def-tone, #555);
 }
 
 /* PF1's masked SVG glyphs (the three saves). Its own rule fixes them at 24px
-   on a black fill; both have to be overridden here to sit in a stat row. */
+   on a black fill; both have to be overridden here to sit in a stat row.
+   Sized slightly above the FA glyphs, which carry internal padding the masks
+   don't, so the two read as the same weight in a row. */
 .pf1-roll-requests .arr-def-glyphs > i.icon-pf {
   display: inline-block;
-  width: 13px;
-  height: 13px;
-  background-color: #555;
+  width: calc(var(--arr-def-stat-size, 11px) * 1.15);
+  height: calc(var(--arr-def-stat-size, 11px) * 1.15);
+  background-color: var(--arr-def-tone, #555);
 }
 
 .arr-def-label {
-  font-size: 9px;
+  font-size: var(--arr-def-stat-label-size, 9px);
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: #666;
 }
 
+/* Deliberately not bold: the keyline already thickens the numerals, and bold on
+   top of it closes up the counters at this size. */
 .arr-def-val {
-  font-weight: bold;
+  font-weight: normal;
+  font-size: var(--arr-def-stat-size, 11px);
+  line-height: 1.15;
+  color: var(--arr-def-tone, inherit);
 }
 
 /* Note / tag groups (AC/CMD/save notes, DR, ER, conditions) — inline label */
