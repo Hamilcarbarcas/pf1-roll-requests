@@ -29,6 +29,37 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     // Roll mode remembered when DM Check forces Private GM Roll, restored when
     // the GM switches back to any other check mode within this dialog session.
     this._rollModeBeforeDM = null;
+
+    // A seeded open (game.pf1RollRequests.openDialog) layers caller-supplied fields
+    // over the remembered ones, so an unseeded call behaves exactly as before.
+    const seed = options.seed;
+    if (seed) {
+      for (const key of RollRequestDialog.SEEDABLE) {
+        if (seed[key] !== undefined) this[key] = seed[key];
+      }
+    }
+  }
+
+  /** Fields `openDialog` may pre-fill. Mirrors what the constructor assigns. */
+  static SEEDABLE = [
+    "checkMode", "dc", "showDC", "showResults", "rollMode", "flavor",
+    "includeAid", "ignoreAidRequirement", "allowUnpassable",
+    "selectedRequest", "targetedActors",
+  ];
+
+  /**
+   * Open the dialog, optionally pre-filled.
+   *
+   * Note the shape of `targetedActors` differs by mode, because the card does:
+   * Selection Check keys rows by **actor** id, while DM and Token Check read the
+   * canvas selection at submit time and key by token id. Seeding a Selection Check
+   * therefore passes actor ids.
+   *
+   *   RollRequestDialog.open({ checkMode: "selection",
+   *                            targetedActors: [{ id: actor.id, name: actor.name, img: actor.img }] });
+   */
+  static open(seed = {}) {
+    return new RollRequestDialog({ seed }).render(true);
   }
 
   _saveSettings() {
@@ -47,7 +78,17 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     };
   }
 
+  async _onFirstRender(context, options) {
+    await super._onFirstRender(context, options);
+    // A marquee drag fires controlToken once per token, so coalesce the burst.
+    this._onControlToken = foundry.utils.debounce(() => {
+      if (this.checkMode === "dmcheck" || this.checkMode === "token") this._refreshTokenPreview();
+    }, 50);
+    Hooks.on("controlToken", this._onControlToken);
+  }
+
   async _onClose(options) {
+    if (this._onControlToken) Hooks.off("controlToken", this._onControlToken);
     this._saveSettings();
     return super._onClose(options);
   }
@@ -139,6 +180,10 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     const targetedSet = new Set(this.targetedActors.map(a => a.id));
     const promptActors = this._getPromptActors(targetedSet);
 
+    // Read-only preview of the canvas selection, occupying the same slot as the
+    // Prompt Actors list for the two check modes that read the canvas.
+    const isDMCheck = this.checkMode === "dmcheck";
+
     return foundry.utils.mergeObject(context, {
       checkMode: this.checkMode,
       dc: this.dc,
@@ -153,7 +198,54 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       optionGroups,
       selectedRequest: this.selectedRequest,
       promptActors,
+      showTokenPreview: isDMCheck || this.checkMode === "token",
+      tokenPreview: RollRequestDialog.getSelectedTokenTargets({ npcOnly: isDMCheck }),
+      tokenPreviewLabel: game.i18n.localize(isDMCheck ? "RR.Dialog.DMTargets" : "RR.Dialog.TokenTargets"),
+      tokenPreviewEmpty: game.i18n.localize(isDMCheck ? "RR.Common.NoNPCTokensSelected" : "RR.Common.NoTokensSelected"),
     });
+  }
+
+  /**
+   * Rebuild the canvas-selection preview in place.
+   *
+   * Called on every canvas selection change and on every check-mode switch, so
+   * the list always names the tokens the request would actually go to. Patches
+   * the DOM rather than re-rendering, because the DC and flavor inputs only
+   * write back on blur and a re-render would discard whatever is being typed.
+   */
+  _refreshTokenPreview() {
+    const list = this.element?.querySelector(".arr-token-preview-list");
+    if (!list) return;
+
+    const isDMCheck = this.checkMode === "dmcheck";
+    const label = this.element.querySelector(".arr-token-preview-label");
+    if (label) label.textContent = game.i18n.localize(isDMCheck ? "RR.Dialog.DMTargets" : "RR.Dialog.TokenTargets");
+
+    const targets = RollRequestDialog.getSelectedTokenTargets({ npcOnly: isDMCheck });
+    if (targets.length === 0) {
+      const empty = document.createElement("span");
+      empty.className = "arr-no-actors-msg";
+      empty.textContent = game.i18n.localize(isDMCheck ? "RR.Common.NoNPCTokensSelected" : "RR.Common.NoTokensSelected");
+      list.replaceChildren(empty);
+      return;
+    }
+
+    list.replaceChildren(...targets.map(target => {
+      const row = document.createElement("div");
+      row.className = "arr-token-preview-row flexrow";
+
+      const img = document.createElement("img");
+      img.className = "arr-actor-check-img";
+      img.src = target.img;
+      img.alt = target.name;
+
+      const name = document.createElement("span");
+      name.className = "arr-actor-check-name";
+      name.textContent = target.name;
+
+      row.append(img, name);
+      return row;
+    }));
   }
 
   /**
@@ -503,11 +595,18 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
     const el = this.element;
 
-    // Actor selection visibility depends on checkMode
+    // Prompt Actors and the canvas preview share the same slot; which one is
+    // shown depends on checkMode.
     const actorSelectionEl = el.querySelector(".arr-actor-selection");
+    const tokenPreviewEl = el.querySelector(".arr-token-preview");
     const syncActorSelectionVisibility = () => {
       if (actorSelectionEl) {
         actorSelectionEl.style.display = this.checkMode === "selection" ? "" : "none";
+      }
+      if (tokenPreviewEl) {
+        const show = this.checkMode === "dmcheck" || this.checkMode === "token";
+        tokenPreviewEl.style.display = show ? "" : "none";
+        if (show) this._refreshTokenPreview();
       }
     };
 

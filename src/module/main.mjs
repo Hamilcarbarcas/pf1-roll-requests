@@ -4,6 +4,8 @@
 
 import { RollRequestDialog } from "./apps/RollRequestDialog.mjs";
 import { RollRequestChat } from "./apps/RollRequestChat.mjs";
+import { ApplyRoll } from "./apps/ApplyRoll.mjs";
+import { ApplyRollPicker } from "./apps/ApplyRollPicker.mjs";
 import { SaveAutoRequest } from "./apps/SaveAutoRequest.mjs";
 import { ActionCheckConfig } from "./apps/ActionCheckConfig.mjs";
 import { BlacklistConfig } from "./apps/BlacklistConfig.mjs";
@@ -18,6 +20,9 @@ Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing Pathfinder 1e Roll Requests`);
   game.pf1RollRequests = { MODULE_ID };
 
+  // Public API for opening the request dialog, optionally pre-filled.
+  game.pf1RollRequests.openDialog = (seed = {}) => RollRequestDialog.open(seed);
+
   // Public API for other modules to contribute Quick Action buttons.
   game.pf1RollRequests.registerQuickAction = registerQuickAction;
   game.pf1RollRequests.unregisterQuickAction = unregisterQuickAction;
@@ -26,6 +31,10 @@ Hooks.once("init", () => {
   // Public API for registering card summary formatters (live aggregate displays).
   game.pf1RollRequests.registerSummary = RollRequestChat.registerSummary;
   game.pf1RollRequests.unregisterSummary = RollRequestChat.unregisterSummary;
+
+  // Public API for recording an existing chat roll on a request (GM-only).
+  game.pf1RollRequests.applyRoll = ApplyRoll.apply;
+  game.pf1RollRequests.applyRollCandidates = ApplyRoll.candidatesFor;
 
   // Setting to auto-convert PF1 attack messages with saves into roll-request cards
   game.settings.register(MODULE_ID, "auto-save-request", {
@@ -95,6 +104,18 @@ Hooks.once("init", () => {
     default: false,
   });
 
+  // Whether applying an existing chat roll to a request also removes the roll's
+  // own message. Off by default: the delete cannot be undone, and the original
+  // card is the only record of a roll the players watched happen.
+  game.settings.register(MODULE_ID, "apply-delete-source", {
+    name: "RR.Settings.ApplyDeleteSource.Name",
+    hint: "RR.Settings.ApplyDeleteSource.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
   // Persistent list of actor ids excluded from the Selection Check prompt list.
   game.settings.register(MODULE_ID, "npc-blacklist", {
     scope: "world",
@@ -157,6 +178,26 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
 // ---- Inject skill/ability check options into the item-action sheet ----
 Hooks.on("renderItemActionSheet", (app, html) => {
   ActionCheckConfig.onRenderActionSheet(app, html);
+});
+
+// ---- Apply an existing roll to a request, from the roll's own context menu ----
+// The push direction of Apply Roll: right-click the check a player already made
+// rather than hunting for it from the card. GM-only, and only offered where the
+// roll actually fits an open request.
+Hooks.on("getChatMessageContextOptions", (_chatLog, options) => {
+  options.push({
+    name: "RR.Apply.ContextMenu",
+    icon: '<i class="fas fa-arrow-right-to-bracket"></i>',
+    condition: (li) => {
+      if (!game.user.isGM) return false;
+      const message = game.messages.get(li?.dataset?.messageId);
+      return !!message && ApplyRoll.requestsFor(message).length > 0;
+    },
+    callback: (li) => {
+      const message = game.messages.get(li?.dataset?.messageId);
+      if (message) ApplyRollPicker.forRoll(message);
+    },
+  });
 });
 
 // ---- Register a scene-control button ----

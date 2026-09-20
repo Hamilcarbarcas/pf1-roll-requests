@@ -2,6 +2,45 @@
 
 Developer reference for driving the module from other modules or macros.
 
+## Opening the dialog
+
+```js
+// Same window the token-control button opens.
+game.pf1RollRequests.openDialog();
+
+// Pre-filled: a Selection Check with one actor already ticked.
+game.pf1RollRequests.openDialog({
+  checkMode: "selection",
+  targetedActors: [{ id: actor.id, name: actor.name, img: actor.img }],
+});
+```
+
+Use this when the GM should finish the request by hand — picking the check, the DC and the
+roll mode — rather than having it posted for them. `createRequest` is the other end: it
+posts a card with no dialog at all.
+
+Seedable fields, all optional:
+
+| Field | Notes |
+|---|---|
+| `checkMode` | `"multi"`, `"single"`, `"selection"`, `"token"`, `"dmcheck"` |
+| `dc` | number or `""` |
+| `showDC`, `showResults` | booleans |
+| `rollMode` | `"roll"`, `"gmroll"`, `"publicblind"`, `"blindroll"` |
+| `flavor` | string |
+| `includeAid`, `ignoreAidRequirement`, `allowUnpassable` | booleans |
+| `selectedRequest` | `{ type, key, name }` — the check itself |
+| `targetedActors` | see below |
+
+Anything you do not seed comes from the settings the dialog remembers between opens, so an
+unseeded `openDialog()` is exactly the button's behavior.
+
+**`targetedActors` does not have one shape.** A Selection Check keys its rows by **actor**
+id and takes `{ id, name, img }`; DM Check and Token Check key by **token** id and carry a
+`tokenUUID`. Seeding those two modes has no effect regardless — both re-read the canvas
+selection at the moment the GM sends the request. In practice only a Selection Check is
+worth seeding.
+
 ## Creating requests
 
 Other modules or scripts can create roll requests programmatically:
@@ -95,6 +134,45 @@ It also closes every [embedded request](#embedded-requests) on the card, and acc
 | Further results | impossible | refused |
 | `onResult` | unregistered, no terminal event | unregistered, no terminal event |
 | Batching | accepts an array | one card per call |
+
+## Applying an existing roll
+
+```js
+// Record a roll that already happened in chat as a request's result.
+await game.pf1RollRequests.applyRoll(requestMessage, null, sourceMessage);
+
+// On an embedded request, name its slot instead of null.
+await game.pf1RollRequests.applyRoll(hostMessage, "reflex", sourceMessage);
+```
+
+The programmatic form of the **Apply Roll** control. Lifts the Roll off `sourceMessage` and records it on the request exactly as a roll made on the card would be — total, formula and dice breakdown intact, with the request's own effect notes re-derived from the actor. Returns `true` when the result was recorded.
+
+GM-only; a non-GM call warns and returns `false` rather than going over the socket. Since the dice are already thrown, the trained-only gate, the natural-20 feasibility gate and the Dice So Nice animation are all skipped.
+
+Options:
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `asAid` | boolean | `false` | Record as an Aid Another result rather than the check itself. Single and multi cards only, and only where the request has `includeAid`. |
+| `confirmed` | boolean | `false` | Skip the "replace the existing result?" prompt. Set it when you have already asked, or are applying a batch. |
+
+Every call is checked before it lands, and a failing one warns and returns `false`:
+
+- The request must be open (not locked) and must roll a check — `skill`, `save` or `ability`. Raw-formula and `selectFromTable` requests have no check type to match against and are refused.
+- `sourceMessage` must carry a roll whose PF1 subject (`message.system.subject`) matches the request's `type` **and** `key` exactly. This is the guarantee that an unrelated roll cannot be fed into a request, and it is enforced here rather than only in the UI.
+- The roll's speaker must have a slot on the request — a row on a targeted card, or any token on a single/multi card. The speaker is what decides *which* slot is filled.
+
+Where a card has banked Aid Another, an applied check has that bonus folded into the stored roll as a real term, so the expanded breakdown still adds up to the total displayed. The fold happens inside the per-message update queue, on freshly-read flags, so it cannot race an aid result arriving at the same moment.
+
+Applied entries carry an `applied: { messageId, time }` field, which drives the GM-only provenance mark on the row and is visible to `onResult` and the `rollComplete` hook like any other entry field. The source message is stamped with `flags["pf1-roll-requests"].appliedTo`, a list of `{ messageId, slot, resultKey }`.
+
+### Finding candidates
+
+```js
+const candidates = game.pf1RollRequests.applyRollCandidates(requestMessage, null);
+```
+
+Returns the eligible source rolls for a request, best first — each `{ message, roll, actor, tokenDoc, route, playerOwned, appliedAlready }`. `route` describes the slot the roll would fill, including whether it is `occupied`. Useful for driving your own picker, or for auto-applying under conditions of your own.
 
 ## Custom formulas and result tables
 

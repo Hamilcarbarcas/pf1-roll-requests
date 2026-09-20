@@ -86,6 +86,21 @@
                     {{/each}}
                 </div>
             </div>
+
+            <!-- Canvas selection preview (token / DM check modes) -->
+            <div class="arr-token-preview" {{#unless showTokenPreview}}style="display:none;"{{/unless}}>
+                <label class="arr-actor-selection-label arr-token-preview-label">{{tokenPreviewLabel}}</label>
+                <div class="arr-actor-check-list arr-token-preview-list">
+                    {{#each tokenPreview}}
+                    <div class="arr-token-preview-row flexrow">
+                        <img src="{{this.img}}" class="arr-actor-check-img" alt="{{this.name}}" />
+                        <span class="arr-actor-check-name">{{this.name}}</span>
+                    </div>
+                    {{else}}
+                    <span class="arr-no-actors-msg">{{tokenPreviewEmpty}}</span>
+                    {{/each}}
+                </div>
+            </div>
         </div>
 
         <!-- Right Panel: Request Options Grid -->

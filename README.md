@@ -44,6 +44,10 @@ To hide a player-owned NPC you don't want prompted, **right-click its row** and 
 
 Because the card is built from tokens rather than actors, unlinked duplicates of the same actor each get their own row and result, and each row can be rolled by whoever owns that token (the GM can roll any of them). Any token type is eligible, not just NPCs. Aid Another, the DC, and the roll mode all work exactly as they do for a Selection Check — the difference is only where the target list comes from. Cards are tagged `[Token Check]`.
 
+#### Target Preview (Token Check / DM Check)
+
+Both canvas-driven modes show a read-only list in the slot the Prompt Actors checklist occupies, naming the tokens the request will go to — portrait and token name per row. **Token Check** lists every selected token; **DM Check** lists only the selected NPC tokens, which is the subset it will actually roll for. The list follows the canvas live, so selecting or deselecting tokens with the dialog open updates it immediately, and it reads *No tokens selected* when there is nothing to send to.
+
 ### Chat Cards
 
 ![Chat Message](assets/request-roll-chat-message-blank.png) 
@@ -65,6 +69,23 @@ The GM always sees the DC and pass/fail results. Players see them only if the GM
 **Result aggregate:** On multi-check and selection-check cards, an optional line below the title/DC can show the running **highest** or **average** of the roll totals, updating live as results arrive (it appears once more than one result is in). Choose *None* (default), *Average result*, or *Highest result* under **Settings → Module Settings → Multi-Check Result Aggregate**. The average is rounded to the nearest whole number, and the line follows the same visibility as the totals themselves — the GM always sees it, and players see it unless the card hides totals (obscured/blind rolls).
 
 **Rolling without a selected token:** Clicking a roll button rolls for your currently selected token. By default, when no token is selected it instead rolls for the actor set in your User Configuration; the GM can disable this under **Settings → Module Settings → Use Configured Actor When None Selected**, in which case clicking with no token selected warns you to select one. This does not affect per-target roll buttons on targeted cards, which are always tied to a specific token.
+
+#### Apply Roll
+
+For when the roll already happened — a player rolled Perception on their sheet before the request went up, or an NPC's save was rolled by hand. **Apply Roll** records that existing chat roll on the request as though it had been rolled there: same total, same formula, same expandable dice breakdown, with the request's own effect notes filled in. GM-only, in both directions.
+
+There are two ways in:
+
+- **From the card** — the **Apply Roll** control in the card's GM footer opens a list of the eligible rolls in the chat log, newest first. Tick as many as you like and apply them together, which is the quick way to fill a targeted card where several targets have already rolled.
+- **From the roll** — right-click the roll in chat and choose **Apply to Roll Request**. When only one open request fits it applies immediately; when several do, you pick which.
+
+A roll is only offered where it genuinely matches. The check must be the same one the request asks for — an unrelated `/r 1d20` is never a candidate — and the roller must have a slot on that request. Targeted cards route the roll to the row whose token made it; single and multi cards route it to the primary slot or to that token's own. An actor with no place on the request simply doesn't appear.
+
+If the slot already holds a result, you're asked before it's replaced. Where a card offers Aid Another and both slots are free, you choose whether the roll counts as the check or as an aid attempt; aid already banked on the card is folded into an applied check as a real term on the roll, so the breakdown still adds up to the total shown beside it. Applied rows carry a small mark, visible to the GM only, naming where the roll came from.
+
+Requests that roll a raw formula and selection requests take no applied roll — neither has a check type to match against.
+
+**Settings → Module Settings → Delete Roll After Applying** additionally deletes the roll's original chat message once it has been applied. Off by default: the delete can't be undone, and that message is the only record of a roll the players watched happen. It runs only after the result is recorded, so a cancelled apply never removes anything.
 
 ### Auto Save Requests
 

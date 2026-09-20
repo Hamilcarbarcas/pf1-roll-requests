@@ -1,0 +1,55 @@
+<div class="arr-apply-picker">
+    {{#if empty}}
+    <p class="arr-apply-empty">{{emptyText}}</p>
+    {{else}}
+
+    {{#if isRolls}}
+    <p class="arr-config-hint">{{localize "RR.Apply.PickerHint"}}</p>
+    {{! The row is not itself a label: it holds two independent checkboxes, and a
+        label wrapping both would toggle the row whenever "as aid" was ticked. }}
+    {{#each rows}}
+    <div class="arr-apply-row flexrow{{#if this.occupied}} arr-apply-replaces{{/if}}">
+        <label class="arr-apply-main flexrow">
+            <input type="checkbox" name="candidate" value="{{this.index}}" />
+            <img class="arr-actor-img" src="{{this.img}}" alt="{{this.name}}" />
+            <span class="arr-apply-name">{{this.name}}</span>
+            <span class="arr-apply-total">{{this.total}}</span>
+            <span class="arr-apply-when">{{this.when}}</span>
+        </label>
+        {{#if this.canAid}}
+        <label class="arr-apply-aid">
+            <input type="checkbox" name="asAid" value="{{this.index}}" />
+            {{localize "RR.Apply.AsAid"}}
+        </label>
+        {{/if}}
+        {{#if this.occupied}}
+        <i class="fas fa-rotate arr-apply-flag" title="{{localize "RR.Apply.ReplacesResult"}}"></i>
+        {{/if}}
+        {{#if this.appliedAlready}}
+        <i class="fas fa-link arr-apply-flag arr-apply-used" title="{{localize "RR.Apply.AlreadyApplied"}}"></i>
+        {{/if}}
+    </div>
+    {{/each}}
+
+    {{else}}
+    <p class="arr-config-hint">{{localize "RR.Apply.PickerHintRequest"}}</p>
+    {{#each rows}}
+    <a class="arr-apply-row arr-apply-pick flexrow" data-action="pickOne" data-index="{{this.index}}">
+        <span class="arr-apply-name">{{this.name}}</span>
+        {{#if this.kind}}<span class="arr-card-kind">{{this.kind}}</span>{{/if}}
+        {{#if this.dc}}<span class="arr-apply-dc">{{localize "RR.Card.DCLabel"}} {{this.dc}}</span>{{/if}}
+        <span class="arr-apply-target">{{this.target}}</span>
+        <span class="arr-apply-when">{{this.when}}</span>
+        {{#if this.occupied}}
+        <i class="fas fa-rotate arr-apply-flag" title="{{localize "RR.Apply.ReplacesResult"}}"></i>
+        {{/if}}
+    </a>
+    {{/each}}
+    {{/if}}
+
+    {{#if truncated}}
+    <p class="arr-apply-truncated">{{localize "RR.Apply.Truncated" shown=truncated.shown total=truncated.total}}</p>
+    {{/if}}
+
+    {{/if}}
+</div>

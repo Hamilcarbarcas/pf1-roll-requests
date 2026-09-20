@@ -4,6 +4,12 @@
 // and updating the message with results.
 // ============================================================
 
+// Apply Roll imports back from here. The cycle is safe because neither module
+// touches the other while its own body is evaluating — only inside methods, by
+// which point both are resolved.
+import { ApplyRoll } from "./ApplyRoll.mjs";
+import { ApplyRollPicker } from "./ApplyRollPicker.mjs";
+
 const MODULE_ID = "pf1-roll-requests";
 
 export class RollRequestChat {
@@ -598,6 +604,8 @@ export class RollRequestChat {
       RollRequestChat._bindTargetedCheck(message, card, flags, slot);
     }
 
+    RollRequestChat._bindApplyRoll(message, card, flags, slot);
+
     // Re-render results from flag data (await so DOM is populated before cleanup/binding)
     await RollRequestChat._renderExistingResults(message, card, flags);
 
@@ -622,6 +630,39 @@ export class RollRequestChat {
     if (flags.mode === "targeted" && flags.isSaveRequest) {
       await RollRequestChat._autoExpandSoleTarget(card, flags);
     }
+  }
+
+  /**
+   * Add the GM's Apply Roll control to a card's footer.
+   *
+   * It rides in the footer, which is already `.gm-only` and already stripped
+   * for players — so a player never receives the control, on top of Apply Roll
+   * refusing a non-GM outright.
+   *
+   * An embed built with `controls: false` has had its footer removed by then and
+   * gets no button: the host asked for rows and nothing else, and the roll's own
+   * context-menu entry reaches that request anyway.
+   *
+   * @param {ChatMessage} message
+   * @param {HTMLElement} card
+   * @param {object} flags
+   * @param {string|null} slot
+   */
+  static _bindApplyRoll(message, card, flags, slot = null) {
+    if (!game.user.isGM || !ApplyRoll.isApplicable(flags)) return;
+    const footer = card.querySelector(".arr-card-footer");
+    if (!footer || footer.querySelector(".arr-apply-btn")) return;
+
+    const btn = document.createElement("a");
+    btn.className = "arr-apply-btn";
+    btn.title = game.i18n.localize("RR.Apply.ButtonTitle");
+    btn.innerHTML = `<i class="fas fa-arrow-right-to-bracket"></i> ${game.i18n.localize("RR.Apply.Button")}`;
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ApplyRollPicker.forRequest(message, slot);
+    });
+    footer.appendChild(btn);
   }
 
   /**
@@ -2006,6 +2047,58 @@ export class RollRequestChat {
     return total;
   }
 
+  /**
+   * Fold banked aid into a result whose roll was made outside this card.
+   *
+   * A roll made through the card carries its aid already, pre-populated into the
+   * roll dialog by _rollWithAidBonus. One lifted from chat never saw it, so the
+   * bonus is appended to the stored roll as a real term rather than added to the
+   * total alone — that keeps the expanded breakdown agreeing with the number
+   * beside it, and gives the aid its own line in the tooltip.
+   *
+   * The dice are untouched: this rebuilds the serialized roll, it does not
+   * re-evaluate one. Roll.fromData restores the total verbatim, so no dice are
+   * re-thrown when the row is rendered.
+   *
+   * @param {object} entry - The result entry.
+   * @param {number} aidTotal
+   * @returns {object} A patched copy, or the entry unchanged when there is no aid.
+   */
+  static _foldAidIntoResult(entry, aidTotal) {
+    if (!(aidTotal > 0)) return entry;
+    const patched = { ...entry, aidApplied: aidTotal };
+
+    if (!entry.rollData) {
+      patched.total = (entry.total ?? 0) + aidTotal;
+      return patched;
+    }
+
+    try {
+      const { OperatorTerm, NumericTerm } = foundry.dice.terms;
+      const flavor = game.i18n.localize("RR.Card.AidAnother");
+
+      // OperatorTerm marks itself evaluated in its constructor; NumericTerm does
+      // not, and a roll restores from data only when every term says evaluated.
+      const op = new OperatorTerm({ operator: "+" });
+      const num = new NumericTerm({ number: aidTotal, options: { flavor } });
+      num.evaluate();
+
+      const data = foundry.utils.deepClone(entry.rollData);
+      data.terms = [...data.terms, op.toJSON(), num.toJSON()];
+      data.total = (entry.total ?? 0) + aidTotal;
+      data.formula = `${data.formula} + ${aidTotal}[${flavor}]`;
+
+      patched.total = data.total;
+      patched.formula = data.formula;
+      patched.rollData = data;
+    } catch (err) {
+      console.error(`${MODULE_ID} | Could not fold aid into an applied roll:`, err);
+      patched.total = (entry.total ?? 0) + aidTotal;
+    }
+
+    return patched;
+  }
+
   // ----------------------------------------------------------
   // Update the ChatMessage with a new roll result
   // ----------------------------------------------------------
@@ -2062,10 +2155,29 @@ export class RollRequestChat {
       targetActorId: targetActorId ?? resultEntry.resultKey ?? resultEntry.actorId,
     })) return void reject("slot already has a result");
 
+    // A roll applied from elsewhere (Apply Roll) never saw this card's banked
+    // aid, which a roll made here would have had pre-populated into its dialog.
+    // The fold happens *here*, inside the queue, on freshly-read flags: reading
+    // aidTotal before enqueueing would race an aid result landing in between and
+    // patch in a number this update then goes on to consume.
+    if (opts.applyAid) {
+      const aidTotal = rollType === "targeted"
+        ? RollRequestChat._calculateAidTotalForActor(flags, targetActorId ?? resultEntry.resultKey)
+        : rollType === "multi"
+          ? (flags.aidTotal || 0)
+          : RollRequestChat._calculateAidTotal(flags);
+      resultEntry = RollRequestChat._foldAidIntoResult(resultEntry, aidTotal);
+    }
+
     // Changes are collected relative to the request's own flag scope, then
     // written through _statePath — which is what lets one code path serve both a
     // whole card and an embed several levels down in the same flags.
     const changes = {};
+
+    // Entries to remove, as [mapKey, entryKey]. A flag object written whole is
+    // *merged* with what is already stored, so dropping a key from the clone in
+    // `changes` is not enough — the removal needs Foundry's own `-=` syntax.
+    const removals = [];
 
     if (rollType === "multi") {
       const rolledActors = foundry.utils.deepClone(flags.rolledActors || {});
@@ -2075,6 +2187,12 @@ export class RollRequestChat {
       if (flags.includeAid) {
         // Mark all currently unredeemed aid entries as consumed and reset the pool
         const aidResults = foundry.utils.deepClone(flags.aidResults || {});
+        // A replacement takes over this token's single action, so its own aid
+        // entry goes rather than leaving one token showing two results for it.
+        if (opts.isRepick && aidResults[resultEntry.tokenId]) {
+          delete aidResults[resultEntry.tokenId];
+          removals.push(["aidResults", resultEntry.tokenId]);
+        }
         for (const entry of Object.values(aidResults)) {
           if (!entry.consumed) entry.consumed = true;
         }
@@ -2087,6 +2205,14 @@ export class RollRequestChat {
       aidResults[resultEntry.tokenId] = resultEntry;
       changes.aidResults = aidResults;
       changes.aidTotal = (flags.aidTotal || 0) + (resultEntry.aidBonus || 0);
+
+      // Mirror of the above: aiding now supersedes a check this token had.
+      if (opts.isRepick && (flags.rolledActors || {})[resultEntry.tokenId]) {
+        const rolledActors = foundry.utils.deepClone(flags.rolledActors || {});
+        delete rolledActors[resultEntry.tokenId];
+        changes.rolledActors = rolledActors;
+        removals.push(["rolledActors", resultEntry.tokenId]);
+      }
 
     } else if (rollType === "aid") {
       const aidResults = foundry.utils.deepClone(flags.aidResults || {});
@@ -2125,6 +2251,15 @@ export class RollRequestChat {
     const updateData = {};
     for (const [key, value] of Object.entries(changes)) {
       updateData[RollRequestChat._statePath(slot, key)] = value;
+    }
+    // After the loop above, never before it: both paths expand onto the same
+    // object, and a `-=` written first would be overwritten by the whole-map
+    // write that followed it.
+    for (const [mapKey, entryKey] of removals) {
+      // mergeObject re-added the key from the stored flags; drop it again so the
+      // re-rendered content matches what the document is about to hold.
+      delete updatedFlags[mapKey]?.[entryKey];
+      updateData[RollRequestChat._statePath(slot, `${mapKey}.-=${entryKey}`)] = null;
     }
     // An embedded request never touches message.content — the host owns it, and
     // rewriting it would freeze whatever the host had injected at render time.
@@ -2400,6 +2535,32 @@ export class RollRequestChat {
   // Build a result <li> HTML string (for insertAdjacentHTML)
   // ----------------------------------------------------------
 
+  /**
+   * Provenance mark for a result lifted off another chat message (Apply Roll).
+   *
+   * GM-only: it is bookkeeping about where a number came from, and a player has
+   * no way to read it as anything but noise beside a roll that otherwise counts
+   * exactly as one made here. It earns its place when a result looks wrong later
+   * — especially where deleting the source removed the original card.
+   *
+   * @param {object} entry
+   * @returns {string}
+   */
+  static _appliedMarkHTML(entry) {
+    if (!entry?.applied) return "";
+    // Two guards, because the mark reaches the card by two routes. Rows built
+    // live are inserted *after* _activateCard has stripped `.gm-only`, so the
+    // class alone would not hide them — hence the check here. Rows baked into
+    // message.content are written GM-side and stripped on each viewer's own
+    // render, which is what the class is still needed for.
+    if (!game.user.isGM) return "";
+    const when = entry.applied.time ? new Date(entry.applied.time).toLocaleTimeString() : "";
+    const title = when
+      ? game.i18n.format("RR.Apply.RowMarkAt", { time: when })
+      : game.i18n.localize("RR.Apply.RowMark");
+    return `<i class="fas fa-arrow-right-to-bracket arr-applied-mark gm-only" title="${title}"></i>`;
+  }
+
   static async _buildResultHTML(entry, dc, showResults, hideTotalFromPlayers = false, resultTable = null) {
     const passed = dc != null ? entry.total >= dc : null;
 
@@ -2456,6 +2617,7 @@ export class RollRequestChat {
         <div class="arr-result-actor flexrow">
           <img class="arr-actor-img" src="${entry.actorImg}" alt="${entry.actorName}" />
           <span class="arr-actor-name">${entry.actorName}</span>
+          ${RollRequestChat._appliedMarkHTML(entry)}
         </div>
         <div class="${totalClass}">
           ${totalHtml}
@@ -2508,6 +2670,7 @@ export class RollRequestChat {
         <div class="arr-result-actor flexrow">
           <img class="arr-actor-img" src="${entry.actorImg}" alt="${entry.actorName}" />
           <span class="arr-actor-name">${entry.actorName}</span>
+          ${RollRequestChat._appliedMarkHTML(entry)}
         </div>
         <div class="arr-result-total ${successClass}">
           ${totalHtml}
@@ -2566,6 +2729,7 @@ export class RollRequestChat {
         <div class="arr-result-actor flexrow">
           <img class="arr-actor-img" src="${entry.actorImg}" alt="${entry.actorName}" />
           <span class="arr-actor-name">${entry.actorName}</span>
+          ${RollRequestChat._appliedMarkHTML(entry)}
         </div>
         <div class="arr-result-total ${passClass}">
           ${showTotal ? `<span class="arr-total-value${labelClass}">${shownTotal}</span>` : '<span class="arr-total-value">?</span>'}
@@ -2617,6 +2781,7 @@ export class RollRequestChat {
         <div class="arr-result-actor flexrow">
           <img class="arr-actor-img" src="${entry.actorImg}" alt="${entry.actorName}" />
           <span class="arr-actor-name">${entry.actorName}</span>
+          ${RollRequestChat._appliedMarkHTML(entry)}
         </div>
         <div class="arr-result-total ${successClass}">
           ${showDetails ? `<span class="arr-total-value">${entry.total}</span>` : '<span class="arr-total-value">?</span>'}
@@ -2812,8 +2977,12 @@ export class RollRequestChat {
     const hasDetails = !!(rollDetailsHtml || notesHtml);
     const chevronHtml = hasDetails ? '<i class="fas fa-chevron-down arr-expand-icon"></i>' : "";
 
+    // The mark rides with the total here: a targeted row's name comes from the
+    // card template, which this only ever fills the result half of.
+    const appliedHtml = RollRequestChat._appliedMarkHTML(result);
+
     inlineDiv.className = `arr-inline-result arr-result-total ${passClass}`;
-    inlineDiv.innerHTML = `${showTotal ? `<span class="arr-total-value${labelClass}">${shownTotal}</span>` : '<span class="arr-total-value">?</span>'}${passFailHtml}${chevronHtml}`;
+    inlineDiv.innerHTML = `${appliedHtml}${showTotal ? `<span class="arr-total-value${labelClass}">${shownTotal}</span>` : '<span class="arr-total-value">?</span>'}${passFailHtml}${chevronHtml}`;
     inlineDiv.removeAttribute("style");
 
     // Inject roll details block after the actor row
