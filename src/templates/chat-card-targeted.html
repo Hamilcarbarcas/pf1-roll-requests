@@ -33,6 +33,9 @@
                 <div class="arr-result-actor flexrow">
                     <img class="arr-actor-img" src="{{this.img}}" alt="{{this.name}}" />
                     <span class="arr-actor-name">{{this.name}}</span>
+                    {{#if this.checkLabel}}
+                    <span class="arr-target-check">{{this.checkLabel}}</span>
+                    {{/if}}
                     {{#if @root.isSaveRequest}}
                     <i class="arr-defenses-icon fas fa-chevron-down" title="{{localize "RR.Card.ShowDefenses"}}"></i>
                     {{/if}}

@@ -1,0 +1,76 @@
+<div class="pf1-opposed-check-form">
+    <div class="form-group">
+        <label for="oc-contest">{{localize "RR.OC.ContestLabel"}}</label>
+        <select id="oc-contest" name="contest">
+            {{#each contests}}
+            <option value="{{this.key}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+            {{/each}}
+        </select>
+    </div>
+
+    <div class="oc-sides">
+        {{#with sideA}}
+        <div class="oc-side{{#unless this.filled}} oc-side-empty{{/unless}}">
+            <span class="oc-side-check">{{this.check}}</span>
+            {{#if this.filled}}
+            <img class="oc-side-img" src="{{this.img}}" alt="{{this.name}}" />
+            <span class="oc-side-name">{{this.name}}{{#if this.hidden}} <i class="fas fa-eye-slash oc-hidden-icon" title="{{localize "RR.OC.HiddenToken"}}"></i>{{/if}}</span>
+            {{else}}
+            <span class="oc-side-name oc-side-placeholder">{{localize "RR.OC.PickToken"}}</span>
+            {{/if}}
+        </div>
+        {{/with}}
+
+        <button type="button" class="oc-swap" data-action="swapSides" title="{{localize "RR.OC.SwapTitle"}}">
+            <i class="fas fa-right-left"></i>
+        </button>
+
+        {{#with sideB}}
+        <div class="oc-side{{#unless this.filled}} oc-side-empty{{/unless}}">
+            <span class="oc-side-check">{{this.check}}</span>
+            {{#if this.filled}}
+            <img class="oc-side-img" src="{{this.img}}" alt="{{this.name}}" />
+            <span class="oc-side-name">{{this.name}}{{#if this.hidden}} <i class="fas fa-eye-slash oc-hidden-icon" title="{{localize "RR.OC.HiddenToken"}}"></i>{{/if}}</span>
+            {{else}}
+            <span class="oc-side-name oc-side-placeholder">{{localize "RR.OC.PickToken"}}</span>
+            {{/if}}
+        </div>
+        {{/with}}
+    </div>
+
+    <label class="oc-list-label">{{localize "RR.OC.SceneTokens"}}</label>
+    <div class="oc-token-list">
+        {{#each tokens}}
+        <div class="oc-token-row{{#if this.side}} oc-token-chosen{{/if}}" data-action="toggleToken" data-token-id="{{this.id}}">
+            <span class="oc-token-badge">{{#if this.side}}{{this.side}}{{/if}}</span>
+            <img class="oc-token-img" src="{{this.img}}" alt="{{this.name}}" />
+            <span class="oc-token-name">{{this.name}}</span>
+            {{#if this.hidden}}<i class="fas fa-eye-slash oc-hidden-icon" title="{{localize "RR.OC.HiddenToken"}}"></i>{{/if}}
+        </div>
+        {{else}}
+        <span class="oc-no-tokens">{{localize "RR.OC.NoTokens"}}</span>
+        {{/each}}
+    </div>
+
+    <div class="form-group">
+        <label for="oc-rollmode">{{localize "RR.Dialog.RollMode"}}</label>
+        <select id="oc-rollmode" name="rollMode">
+            <option value="roll|show" {{#if (eq rollModeOption "roll|show")}}selected{{/if}}>{{localize "RR.Mode.PublicRoll"}}</option>
+            <option value="roll|hidden" {{#if (eq rollModeOption "roll|hidden")}}selected{{/if}}>{{localize "RR.Mode.PublicRollHidden"}}</option>
+            <option value="gmroll|show" {{#if (eq rollModeOption "gmroll|show")}}selected{{/if}}>{{localize "RR.Mode.PrivateGMRoll"}}</option>
+            <option value="publicblind|show" {{#if (eq rollModeOption "publicblind|show")}}selected{{/if}}>{{localize "RR.Mode.BlindRoll"}}</option>
+            <option value="publicblind|hidden" {{#if (eq rollModeOption "publicblind|hidden")}}selected{{/if}}>{{localize "RR.Mode.BlindRollHidden"}}</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="oc-flavor">{{localize "RR.Dialog.FlavorText"}}</label>
+        <input type="text" id="oc-flavor" name="flavor" value="{{flavor}}" placeholder="{{localize "RR.Dialog.FlavorPlaceholder"}}" />
+    </div>
+
+    <div class="oc-actions">
+        <button type="button" data-action="requestOpposed" {{#unless ready}}disabled{{/unless}}>
+            <i class="fas fa-dice-d20"></i> {{localize "RR.OC.RequestButton"}}
+        </button>
+    </div>
+</div>

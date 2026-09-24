@@ -302,6 +302,34 @@
   text-align: center;
 }
 
+.arr-summary .arr-opposed-note {
+  font-size: 11px;
+  font-weight: normal;
+  opacity: 0.75;
+}
+
+/* ---- Opposed cards: the winning row ---- */
+
+.arr-targeted-block.arr-opposed-winner {
+  border-left: 3px solid #c0a060;
+  padding-left: 5px;
+  background: rgba(192, 160, 96, 0.1);
+}
+
+.arr-opposed-crown {
+  color: #c0a060;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+/* The check a row rolls, where it differs from the card's own. */
+.arr-target-check {
+  font-size: 11px;
+  font-style: italic;
+  color: #7a7971;
+  white-space: nowrap;
+}
+
 /* ---- Highest/average aggregate line (check-aggregate setting) ---- */
 
 .arr-aggregate {
@@ -1108,6 +1136,60 @@
   --arr-def-tone: #27692a;
 }
 
+/* Per-maneuver CMD, from pf1-combat-maneuvers. The CMD row becomes a disclosure
+   when at least one maneuver deviates from the baseline; without the module the
+   toggle and the list are never emitted, so none of this applies. */
+.pf1-roll-requests .arr-def-cmd-expandable {
+  cursor: pointer;
+}
+
+.pf1-roll-requests .arr-def-cmd-toggle {
+  font-size: 9px;
+  opacity: 0.55;
+  margin-left: 2px;
+}
+
+.pf1-roll-requests .arr-def-cmd-expandable:hover .arr-def-cmd-toggle {
+  opacity: 0.9;
+}
+
+/* Collapsed is the default state, so the panel opens looking exactly as it does
+   without the module installed. */
+.pf1-roll-requests .arr-def-cmd-maneuvers {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.pf1-roll-requests .arr-def-cmd-maneuvers.arr-expanded {
+  display: flex;
+}
+
+/* Subordinate to the CMD row above: inset, lighter keyline, no fill of its own,
+   so the group reads as one block rather than as more top-level rows. */
+.pf1-roll-requests .arr-def-row-mvr {
+  margin: 0 10px;
+  border-color: #dcdcdc;
+  background: transparent;
+
+  /* The tone filter outlines whatever it is painted over, and here that
+     includes an <img> rather than a glyph — a keyline would halo the icon's
+     own border. Zero width keeps the tones and drops the outline. */
+  --arr-def-outline: 0px;
+}
+
+/* The maneuver's own icon stands in for the CMD glyph. Border reset because
+   Foundry puts one on every img inside a chat card. */
+.pf1-roll-requests .arr-def-mvr-img {
+  width: calc(var(--arr-def-stat-size, 18px) - 2px);
+  height: calc(var(--arr-def-stat-size, 18px) - 2px);
+  border: none;
+  border-radius: 2px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
 /* Black keyline on the toned stats. Four zero-blur drop-shadows rather than
    -webkit-text-stroke, which reaches glyphs only: the three save icons are
    mask-painted SVGs, and a filter outlines the rendered shape whatever painted
@@ -1155,10 +1237,12 @@
   color: #666;
 }
 
-/* Deliberately not bold: the keyline already thickens the numerals, and bold on
-   top of it closes up the counters at this size. */
+/* Light weight: the keyline adds a pixel to every edge, so a regular face
+   reads as bold once outlined. Family pinned because Foundry ships Signika's
+   300 cut; another inherited face may not have one. */
 .arr-def-val {
-  font-weight: normal;
+  font-family: var(--font-primary, "Signika"), sans-serif;
+  font-weight: 300;
   font-size: var(--arr-def-stat-size, 11px);
   line-height: 1.15;
   color: var(--arr-def-tone, inherit);
@@ -1352,6 +1436,34 @@
 }
 
 /* ============================================================
+   Auto-converted save requests
+   One widget per attack entry that carries a save, placed above that entry as
+   a render-time child of PF1's own card (see SaveAutoRequest). The entries
+   below already carry their own spacing, so only the gap above is set here.
+   ============================================================ */
+
+.pf1.chat-card > .arr-save-insert {
+  margin-bottom: 3px;
+}
+
+/* Title a step above the compact 14px. */
+.arr-save-insert .arr-save-request > .arr-card-header .arr-card-title {
+  font-size: 17.5px;
+  line-height: 30px;
+}
+
+/* A sole target gets a larger portrait and name. Counted in rendered rows. */
+.arr-save-insert .arr-save-request .arr-card-body:not(:has(> .arr-targeted-block ~ .arr-targeted-block)) .arr-targeted-actor-row .arr-actor-img {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+}
+
+.arr-save-insert .arr-save-request .arr-card-body:not(:has(> .arr-targeted-block ~ .arr-targeted-block)) .arr-targeted-actor-row .arr-actor-name {
+  font-size: 18px;
+}
+
+/* ============================================================
    Apply Roll
    ============================================================ */
 
@@ -1480,4 +1592,188 @@
   font-style: italic;
   color: #888;
   margin: 4px 0 0;
+}
+
+/* ============================================================
+   Opposed Check window
+   Kept in this sheet rather than one of its own: a new entry in module.json's
+   `styles` is not picked up until Foundry re-reads the manifest.
+   ============================================================ */
+
+.pf1-opposed-check .pf1-opposed-check-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 2px;
+}
+
+.pf1-opposed-check .form-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.pf1-opposed-check .form-group label {
+  flex: 0 0 90px;
+  font-weight: bold;
+}
+
+.pf1-opposed-check .form-group select,
+.pf1-opposed-check .form-group input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- The two sides ---- */
+
+.pf1-opposed-check .oc-sides {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.pf1-opposed-check .oc-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 4px;
+  border: 1px solid #c0a060;
+  border-radius: 3px;
+  background: rgba(192, 160, 96, 0.12);
+  text-align: center;
+}
+
+.pf1-opposed-check .oc-side-empty {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: none;
+}
+
+.pf1-opposed-check .oc-side-check {
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+
+.pf1-opposed-check .oc-side-img {
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.pf1-opposed-check .oc-side-name {
+  font-size: 12px;
+  font-weight: bold;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf1-opposed-check .oc-side-placeholder {
+  font-weight: normal;
+  font-style: italic;
+  opacity: 0.5;
+  padding: 14px 0;
+}
+
+.pf1-opposed-check .oc-swap {
+  flex: 0 0 28px;
+  width: 28px;
+  padding: 0;
+  align-self: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+}
+
+.pf1-opposed-check .oc-swap:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ---- Token list ---- */
+
+.pf1-opposed-check .oc-list-label {
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.pf1-opposed-check .oc-token-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  padding: 2px;
+}
+
+.pf1-opposed-check .oc-token-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.pf1-opposed-check .oc-token-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.pf1-opposed-check .oc-token-chosen {
+  background: rgba(192, 160, 96, 0.15);
+}
+
+.pf1-opposed-check .oc-token-badge {
+  flex: 0 0 14px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #c0a060;
+  text-align: center;
+}
+
+.pf1-opposed-check .oc-token-img {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.pf1-opposed-check .oc-token-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pf1-opposed-check .oc-hidden-icon {
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.pf1-opposed-check .oc-no-tokens {
+  display: block;
+  padding: 8px;
+  font-style: italic;
+  font-size: 12px;
+  opacity: 0.5;
+  text-align: center;
+}
+
+.pf1-opposed-check .oc-actions {
+  text-align: center;
+  margin-top: 2px;
 }

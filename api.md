@@ -95,6 +95,42 @@ Each `targetedActors` entry requires only `id` (the token document ID). All othe
 | `name` | `tokenDoc.name` | Show a different display name on the card |
 | `img` | `tokenDoc.actor.img` (falls back to the token texture) | Show a different portrait |
 | `isHidden` | `tokenDoc.hidden` | Force a token visible or hidden on the card regardless of its canvas state |
+| `check` | the card's own `request` | Roll a **different check** on that row — `{ type, key }`, with `name` resolved from the key if omitted |
+
+### Per-row checks
+
+An entry's `check` override travels with the row everywhere: its roll button, its share of **Roll All**, an Aid Another aimed at it, and any roll fed to it with [Apply Roll](#applying-an-existing-roll) — which matches the row against *its* check rather than the card's. The resolved name is shown beside that row's portrait, so a card whose rows do not all roll the same thing still says what each one is rolling.
+
+```js
+// One card, two different checks
+game.pf1RollRequests.createRequest({
+  type: "skill", key: "ste", name: "Stealth vs. Perception",
+  mode: "targeted",
+  targetedActors: [
+    { id: rogueToken.id, check: { type: "skill", key: "ste" } },
+    { id: guardToken.id, check: { type: "skill", key: "per" } },
+  ],
+});
+```
+
+### Opposed requests
+
+`opposed: true` on a targeted request with **exactly two** targets compares the two totals with each other instead of measuring them against a DC. This is what the **Opposed Check** Quick Action posts.
+
+The card names the winner in its summary slot and marks the winning row. `dc` is forced to `null` (so there are no pass/fail marks) and the highest/average aggregate line is suppressed. Ties follow RAW: the higher check modifier wins, and two identical modifiers are reported as a dead tie calling for a reroll.
+
+The verdict is recomputed from the card's results on every roll, so replacing a result later — with Apply Roll, say — re-decides the contest. Its visibility follows `showResults`, like every other verdict on a card.
+
+```js
+game.pf1RollRequests.createRequest({
+  type: "skill", key: "ste", name: "Stealth vs. Perception",
+  mode: "targeted", opposed: true, showResults: true,
+  targetedActors: [
+    { id: rogueToken.id, check: { type: "skill", key: "ste" } },
+    { id: guardToken.id, check: { type: "skill", key: "per" } },
+  ],
+});
+```
 
 `game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place. Pass `{ slot }` as a second argument to roll an [embedded request](#embedded-requests) instead of the card itself, and `{ which: "npcs" }` to skip every character-type actor and every target an active player owns — what the card's **Roll NPCs** button does.
 

@@ -9,6 +9,7 @@
 // which point both are resolved.
 import { ApplyRoll } from "./ApplyRoll.mjs";
 import { ApplyRollPicker } from "./ApplyRollPicker.mjs";
+import { opposedOutcome } from "./OpposedCheck.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -177,6 +178,9 @@ export class RollRequestChat {
     }
     if (setting !== "average" && setting !== "highest") return "";
     if (flags.mode !== "multi" && flags.mode !== "targeted") return "";
+    // An opposed card already prints the only comparison that matters, and the
+    // highest of two totals is the winner's under another name.
+    if (flags.opposed) return "";
     // Auto-generated save-request cards aren't "selection checks"; keep them uncluttered.
     if (flags.isSaveRequest) return "";
     // A result table shows labels rather than totals, so a highest/average of the
@@ -494,7 +498,11 @@ export class RollRequestChat {
       includeAid: flags.includeAid,
       // Roll mode display name (shown in GM-only footer)
       modeName: RollRequestChat._getModeName(flags.rollMode, flags.showResults),
-      targetedActors: flags.targetedActors ?? [],
+      // A row that rolls something other than the card's own check says so
+      // beside its name — otherwise an opposed card would show two portraits
+      // with no hint which half of the contest each one is rolling.
+      targetedActors: (flags.targetedActors ?? []).map(t =>
+        t.check?.name ? { ...t, checkLabel: t.check.name } : t),
       isSaveRequest: flags.isSaveRequest ?? false,
       isSelection: flags.selectFromTable ?? false,
       targetsOnly: flags.targetsOnly ?? false,
@@ -558,10 +566,11 @@ export class RollRequestChat {
       await RollRequestChat._activateCard(message, card, message.flags?.[MODULE_ID], null);
     }
 
-    // Bind the standalone check button (mirrors PF1's native save button) that
-    // auto-generated skill/ability check cards carry in the preserved PF1 footer,
-    // outside .arr-card. Same behaviour as the save button: roll for the clicker's
-    // selected token(s) as a standalone PF1 roll card.
+    // Bind the standalone check button (mirrors PF1's native save button) on
+    // skill/ability check cards converted before the auto-save request moved to
+    // embeds: theirs is baked into the preserved PF1 footer, outside .arr-card.
+    // SaveAutoRequest binds the ones it draws itself. Same behaviour as the save
+    // button: roll for the clicker's selected token(s) as a standalone PF1 card.
     const checkBtn = root?.querySelector?.(".rr-check-button");
     if (checkBtn && !checkBtn.dataset.bound) {
       checkBtn.dataset.bound = "1";
@@ -581,11 +590,21 @@ export class RollRequestChat {
   // ----------------------------------------------------------
 
   static async _activateCard(message, card, flags, slot = null) {
+    // Before the visibility pass below, not after: on a card that hides its
+    // results the crown is `.gm-only`, and adding it once the strip has run
+    // would leave it sitting on a player's screen. Only an embed reaches this
+    // unmarked — a whole card carries the mark in its stored content.
+    if (flags?.opposed) RollRequestChat._markOpposedWinner(card, flags);
+
     // Remove GM-only elements for non-GMs; remove player-only elements for GMs
     if (game.user.isGM) {
       card.querySelectorAll(".arr-player-only").forEach(el => el.remove());
     } else {
       card.querySelectorAll(".gm-only").forEach(el => el.remove());
+      // The crown went with the line above; the row highlight is a class on a
+      // block that stays, so it has to be undone rather than removed.
+      card.querySelectorAll(".arr-winner-gm-only").forEach(el =>
+        el.classList.remove("arr-opposed-winner", "arr-winner-gm-only"));
     }
 
     if (!flags || !flags.request) return;
@@ -626,8 +645,10 @@ export class RollRequestChat {
     RollRequestChat._bindExpandToggle(card);
 
     // A sole target's dropdown opens by itself — after the results above, whose
-    // chevron it has to leave pointing the right way.
-    if (flags.mode === "targeted" && flags.isSaveRequest) {
+    // chevron it has to leave pointing the right way. `autoExpand: false` opts
+    // out: where one card carries several requests over the same target, only
+    // the first is worth opening (see SaveAutoRequest).
+    if (flags.mode === "targeted" && flags.isSaveRequest && flags.autoExpand !== false) {
       await RollRequestChat._autoExpandSoleTarget(card, flags);
     }
   }
@@ -846,7 +867,15 @@ export class RollRequestChat {
   }
 
   static _bindRollButton(btn, message, flags, rollType, opts = {}) {
-    RollRequestChat._bindBusyClick(btn, () => RollRequestChat._handleRoll(message, flags, rollType, opts));
+    RollRequestChat._bindBusyClick(btn, (ev) => RollRequestChat._handleRoll(message, flags, rollType, {
+      ...opts,
+      skipDialog: RollRequestChat._skipDialogFor(ev),
+    }));
+  }
+
+  /** Whether a roll-button click skips PF1's roll dialog: the user's setting, inverted by Shift. */
+  static _skipDialogFor(ev) {
+    return game.settings.get(MODULE_ID, "skip-roll-dialog") !== !!ev?.shiftKey;
   }
 
   // ----------------------------------------------------------
@@ -1150,6 +1179,7 @@ export class RollRequestChat {
     }
     RollRequestChat._bindDefenseCardLink(panel, actor, entry);
     RollRequestChat._bindSaveRollLinks(panel, actor, entry);
+    RollRequestChat._bindManeuverCmdToggle(panel);
     return true;
   }
 
@@ -1305,7 +1335,20 @@ export class RollRequestChat {
 
     let cmdRow = `${stat(game.i18n.localize("RR.Def.CMD"), cmd.total ?? 0, ICON.cmd, "red")}${stat(game.i18n.localize("RR.Def.FFCMD"), cmd.flatFootedTotal ?? 0, ICON.ffcmd, "green")}`;
     if (sr) cmdRow += statLabelled(game.i18n.localize("RR.Def.SR"), sr);
-    html += `<div class="arr-def-row arr-def-row-cmd">${cmdRow}</div>`;
+
+    // pf1-combat-maneuvers gives CMD a per-maneuver value. Only maneuvers that
+    // actually deviate from the baseline are worth a row — a full list would be
+    // ten rows of the number already on screen — and they start collapsed, so a
+    // panel with the module installed opens looking exactly like one without it.
+    const maneuverRows = RollRequestChat._buildManeuverCmdRows(cmd, { stat, ICON });
+    if (maneuverRows) {
+      cmdRow += `<span class="arr-def-cmd-toggle" data-tooltip="${game.i18n.localize("RR.Def.CMDManeuvers")}"><i class="fa-solid fa-chevron-down" inert></i></span>`;
+      html += `<div class="arr-def-row arr-def-row-cmd arr-def-cmd-expandable">${cmdRow}</div>`;
+      html += `<div class="arr-def-cmd-maneuvers">${maneuverRows}</div>`;
+    } else {
+      html += `<div class="arr-def-row arr-def-row-cmd">${cmdRow}</div>`;
+    }
+
     html += gap(
       true,
       noteGroup(game.i18n.localize("RR.Def.CMDNotes"), cmdNotes),
@@ -1323,6 +1366,84 @@ export class RollRequestChat {
 
     html += `</div>`;
     return html;
+  }
+
+  /**
+   * Rows for maneuvers whose CMD differs from the actor's general CMD.
+   *
+   * Optional integration with pf1-combat-maneuvers: that module stores a
+   * per-maneuver CMD as a delta from the baseline under
+   * `system.attributes.cmd.maneuvers`. Absent the module the key does not exist
+   * and this returns nothing, leaving the panel exactly as it was.
+   *
+   * A maneuver earns a row only when its delta is non-zero — an unmodified
+   * maneuver would just restate the CMD already shown above it. The maneuver's
+   * own icon identifies the row, with its name on the tooltip; the flat-footed
+   * value keeps the shoe-prints glyph it has everywhere else.
+   *
+   * @param {object} cmd - The actor's `system.attributes.cmd`.
+   * @param {object} helpers - `stat` and `ICON` from the panel builder.
+   * @returns {string} Row HTML, or "" when there is nothing to show.
+   */
+  static _buildManeuverCmdRows(cmd, { stat, ICON }) {
+    const registry = game.pf1CombatManeuvers?.registry;
+    const perManeuver = cmd?.maneuvers;
+    if (!registry || !perManeuver) return "";
+
+    const rows = [];
+    for (const [id, node] of Object.entries(perManeuver)) {
+      if (!node) continue;
+      const delta = Number(node.delta) || 0;
+      const ffDelta = Number(node.ffDelta) || 0;
+      if (!delta && !ffDelta) continue;
+
+      const entry = registry.get(id);
+      if (!entry) continue;
+
+      rows.push({
+        name: entry.label ?? id,
+        img: entry.img,
+        total: Number(node.total) || 0,
+        ffTotal: Number(node.ffTotal) || 0,
+      });
+    }
+    if (!rows.length) return "";
+
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+
+    return rows
+      .map((row) => {
+        const maneuver = foundry.utils.escapeHTML(row.name);
+        const img = foundry.utils.escapeHTML(String(row.img ?? ""));
+        const glyph = `<span class="arr-def-glyphs"><img class="arr-def-mvr-img" src="${img}" alt=""></span>`;
+        // Name the defense as well as the maneuver: the icon already says which
+        // maneuver the row is, so a bare name on hover would only repeat it.
+        return `<div class="arr-def-row arr-def-row-cmd arr-def-row-mvr">`
+          + stat(game.i18n.format("RR.Def.CMDFor", { maneuver }), row.total, glyph, "red")
+          + stat(game.i18n.format("RR.Def.FFCMDFor", { maneuver }), row.ffTotal, ICON.ff, "green")
+          + `</div>`;
+      })
+      .join("");
+  }
+
+  /**
+   * Bind the CMD row's expand toggle. No-op when the row has no maneuver rows
+   * under it, which is every panel without pf1-combat-maneuvers installed.
+   */
+  static _bindManeuverCmdToggle(panel) {
+    const row = panel.querySelector(".arr-def-cmd-expandable");
+    const list = panel.querySelector(".arr-def-cmd-maneuvers");
+    if (!row || !list) return;
+
+    row.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const open = !list.classList.contains("arr-expanded");
+      list.classList.toggle("arr-expanded", open);
+      const chevron = row.querySelector(".arr-def-cmd-toggle i");
+      chevron?.classList.toggle("fa-chevron-down", !open);
+      chevron?.classList.toggle("fa-chevron-up", open);
+    });
   }
 
   // ----------------------------------------------------------
@@ -1473,7 +1594,7 @@ export class RollRequestChat {
   }
 
   static async _handleRollInner(message, _flags, rollType, opts = {}, gate = {}) {
-    const { targetActorId, slot = null } = opts;
+    const { targetActorId, slot = null, skipDialog = false } = opts;
 
     // Re-read flags from the message to get the latest state. For an embedded
     // request that is its own sub-object, not the message's flag scope.
@@ -1490,7 +1611,15 @@ export class RollRequestChat {
       return;
     }
 
-    const request = currentFlags.request;
+    // A card normally has one request every row shares. A row may override it
+    // with a check of its own (API: targetedActors[].check), which is what lets
+    // an opposed card roll Stealth on one side and Perception on the other.
+    // Aid follows the override too: aiding a check means rolling that check.
+    let request = currentFlags.request;
+    if (rollType === "targeted" || rollType === "targetedAid") {
+      const override = currentFlags.targetedActors?.find(t => t.id === targetActorId)?.check;
+      if (override) request = override;
+    }
     const dc = currentFlags.dc;
 
     // --- Acquire actor and tokenId based on roll type ---
@@ -1702,15 +1831,15 @@ export class RollRequestChat {
       if (rollType === "targeted" && currentFlags.includeAid) {
         // Pre-populate this actor's accumulated aid bonus into the roll dialog
         const aidTotal = RollRequestChat._calculateAidTotalForActor(currentFlags, targetActorId);
-        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal);
+        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal, skipDialog);
       } else if (rollType === "primary" && currentFlags.includeAid) {
-        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc);
+        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, null, skipDialog);
       } else if (rollType === "multi" && currentFlags.includeAid) {
         // Use the current unredeemed aid pool (resets to 0 after each primary roll)
         const aidTotal = currentFlags.aidTotal || 0;
-        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal);
+        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal, skipDialog);
       } else {
-        rollResult = await RollRequestChat._performRoll(actor, request, dc);
+        rollResult = await RollRequestChat._performRoll(actor, request, dc, { skipDialog });
       }
     } catch (err) {
       console.error(`${MODULE_ID} | Roll error:`, err);
@@ -1824,13 +1953,13 @@ export class RollRequestChat {
   // Perform roll with aid bonus pre-populated in dialog
   // ----------------------------------------------------------
 
-  static async _rollWithAidBonus(actor, request, flags, dc, aidTotalOverride = null) {
+  static async _rollWithAidBonus(actor, request, flags, dc, aidTotalOverride = null, skipDialog = false) {
     const aidTotal = aidTotalOverride !== null
       ? aidTotalOverride
       : RollRequestChat._calculateAidTotal(flags);
 
     const opts = {
-      skipDialog: false,    // Show the confirmation dialog
+      skipDialog,
       chatMessage: false,
     };
     if (dc != null) opts.dc = dc;
@@ -1929,6 +2058,17 @@ export class RollRequestChat {
       const img = block.querySelector(".arr-actor-img");
       if (img) img.alt = display;
     }
+
+    // The opposed verdict line names a token too, and is baked into
+    // message.content by the GM — so without this it would hand every player
+    // the real name of a token they are meant to see a randomized one for.
+    for (const nameEl of card.querySelectorAll(".arr-opposed-name[data-token-id]")) {
+      const entry = flags.targetedActors?.find(t => t.id === nameEl.dataset.tokenId);
+      const tokenDoc = entry?.tokenUUID ? fromUuidSync(entry.tokenUUID) : null;
+      if (!tokenDoc) continue;
+      const display = api.getDisplayName(tokenDoc, game.user);
+      if (display) nameEl.textContent = display;
+    }
   }
 
   // ----------------------------------------------------------
@@ -1938,6 +2078,7 @@ export class RollRequestChat {
 
   static _getCheckKindLabel(flags) {
     // DM and Token checks render as "targeted" cards but get their own tags.
+    if (flags.opposed) return game.i18n.localize("RR.Card.KindOpposed");
     if (flags.isDMCheck) return game.i18n.localize("RR.Card.KindDM");
     if (flags.isTokenCheck) return game.i18n.localize("RR.Card.KindToken");
     // Auto-generated save-request cards are treated as their own thing (they also
@@ -2353,6 +2494,9 @@ export class RollRequestChat {
       await RollRequestChat._injectTargetedResults(card, flags);
     }
 
+    // The PF1 halves exist only on cards the auto-save request converted before
+    // it moved to embeds: it split their content in two and stored the pieces.
+    // Nothing writes them any more, and a card without them is just its widget.
     return (flags.pf1HeaderHtml ?? "") + card.outerHTML + (flags.pf1FooterHtml ?? "");
   }
 
@@ -2529,6 +2673,44 @@ export class RollRequestChat {
         if (bonusValue) bonusValue.textContent = `+${aidTotal}`;
       }
     }
+
+    RollRequestChat._markOpposedWinner(card, flags);
+  }
+
+  /**
+   * Crown the winning row of a decided opposed card. Recomputed from flags on
+   * every rebuild, so a result replaced later moves the crown with it.
+   *
+   * The banner in the summary slot hides itself from players when the card
+   * hides its results; the row has to be hidden the same way, and a class
+   * cannot be stripped by the `.gm-only` removal (which removes whole
+   * elements). So the block is tagged instead, and _activateCard undoes the
+   * highlight per viewer.
+   *
+   * @param {HTMLElement} card
+   * @param {object} flags
+   */
+  static _markOpposedWinner(card, flags) {
+    // Called from two places: the content rebuild (which bakes the mark into
+    // message.content) and _activateCard. A whole card therefore arrives at the
+    // second already marked, and only a freshly-templated one — an embed — has
+    // anything left to do.
+    if (card.dataset.arrOpposedMarked) return;
+
+    const outcome = opposedOutcome(flags);
+    if (!outcome?.winner) return;
+
+    const block = card.querySelector(`.arr-targeted-block[data-actor-id="${outcome.winner}"]`);
+    if (!block) return;
+
+    card.dataset.arrOpposedMarked = "1";
+    block.classList.add("arr-opposed-winner");
+    if (!flags.showResults) block.classList.add("arr-winner-gm-only");
+
+    const anchor = block.querySelector(".arr-actor-name");
+    anchor?.insertAdjacentHTML("afterend",
+      `<i class="fas fa-crown arr-opposed-crown${flags.showResults ? "" : " gm-only"}" `
+      + `title="${game.i18n.localize("RR.OC.WinnerTitle")}"></i>`);
   }
 
   // ----------------------------------------------------------
@@ -3282,16 +3464,19 @@ export class RollRequestChat {
         if (playerOwned) continue;
       }
 
+      // Honour a row's own check, as the per-row button does.
+      const request = target.check ?? initialFlags.request;
+
       let rollResult;
       try {
-        rollResult = await RollRequestChat._performRoll(actor, initialFlags.request, initialFlags.dc, { skipDialog: true });
+        rollResult = await RollRequestChat._performRoll(actor, request, initialFlags.dc, { skipDialog: true });
       } catch (err) {
         console.error(`${MODULE_ID} | Bulk roll error for ${actor.name}:`, err);
         continue;
       }
       if (!rollResult) continue;
 
-      const notes = await RollRequestChat._getEffectNotes(actor, initialFlags.request);
+      const notes = await RollRequestChat._getEffectNotes(actor, request);
       const resultEntry = {
         tokenId,
         actorId: actor.id,

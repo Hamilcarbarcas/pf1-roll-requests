@@ -12,6 +12,7 @@ import { BlacklistConfig } from "./apps/BlacklistConfig.mjs";
 import { RollOptionsConfig } from "./apps/RollOptionsConfig.mjs";
 import { registerQuickAction, unregisterQuickAction, getQuickActions } from "./roll-options.mjs";
 import { MONSTER_LORE_SUMMARY_KEY, monsterLoreSummary } from "./apps/MonsterLore.mjs";
+import { OPPOSED_SUMMARY_KEY, opposedSummary } from "./apps/OpposedCheck.mjs";
 import { SocketHandler } from "./SocketHandler.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
@@ -116,6 +117,17 @@ Hooks.once("init", () => {
     default: false,
   });
 
+  // Per-user default for roll-request card buttons: roll straight through or open
+  // PF1's roll dialog. Shift-click inverts it for that one click.
+  game.settings.register(MODULE_ID, "skip-roll-dialog", {
+    name: "RR.Settings.SkipRollDialog.Name",
+    hint: "RR.Settings.SkipRollDialog.Hint",
+    scope: "user",
+    config: true,
+    type: Boolean,
+    default: false,
+  });
+
   // Persistent list of actor ids excluded from the Selection Check prompt list.
   game.settings.register(MODULE_ID, "npc-blacklist", {
     scope: "world",
@@ -167,12 +179,27 @@ Hooks.once("ready", () => {
 
   // Register the Monster Lore card summary (live "Questions earned" tally).
   RollRequestChat.registerSummary(MONSTER_LORE_SUMMARY_KEY, monsterLoreSummary);
+
+  // Register the Opposed Check verdict line ("<name> wins", or a dead tie).
+  RollRequestChat.registerSummary(OPPOSED_SUMMARY_KEY, opposedSummary);
 });
 
 // ---- Render interactive elements on chat cards ----
 Hooks.on("renderChatMessageHTML", (message, html, data) => {
   SaveAutoRequest.onRenderChatMessage(message, html);
   RollRequestChat.onRenderChatMessage(message, html, data);
+});
+
+// ---- Route a save rolled from PF1's own button into the request above it ----
+// Two halves of one trip: the rolling client stamps the check it is posting
+// with the request that button belongs to, and the GM records it there.
+Hooks.on("preCreateChatMessage", (message) => {
+  SaveAutoRequest.onPreCreateChatMessage(message);
+});
+
+Hooks.on("createChatMessage", (message) => {
+  SaveAutoRequest.onCreateChatMessage(message)
+    .catch((err) => console.error(`${MODULE_ID} | Could not route a save into its request:`, err));
 });
 
 // ---- Inject skill/ability check options into the item-action sheet ----
@@ -227,6 +254,24 @@ Hooks.on("getSceneControlButtons", (controls) => {
 // ============================================================
 
 /**
+ * The display name of a check, from PF1's own tables. A "dice" request is named
+ * by its formula, which is the only thing there is to call it.
+ *
+ * @param {{type: string, key: string}} check
+ * @returns {string}
+ */
+function resolveCheckName({ type, key }) {
+  const table = type === "ability" ? pf1.config.abilities
+    : type === "save" ? pf1.config.savingThrows
+      : type === "skill" ? pf1.config.skills
+        : null;
+  if (!table) return key;
+  const label = table[key];
+  if (!label) return key;
+  return typeof label === "string" ? label : game.i18n.localize(label);
+}
+
+/**
  * Resolve `targetedActors` entries against the canvas, filling in whatever the
  * caller left out. Each entry needs only `{ id }` (a token document ID).
  *
@@ -243,6 +288,9 @@ function resolveTargetedActors(targetedActors) {
     // than a top-down token, and fall back to it when the actor has none.
     entry.img      ??= tokenDoc.actor?.img ?? tokenDoc.texture?.src;
     entry.isHidden ??= tokenDoc.hidden ?? false;
+    // A per-target check override needs a display name like the card's own
+    // request does; resolve it here so callers may pass { type, key } alone.
+    if (entry.check && !entry.check.name) entry.check.name = resolveCheckName(entry.check);
   }
   return targetedActors ?? [];
 }
@@ -327,21 +375,7 @@ async function buildRequestData(options, { embedded = false } = {}) {
   }
 
   // Resolve display name if not provided
-  let name = options.name;
-  if (!name) {
-    if (type === "ability") {
-      const label = pf1.config.abilities[key];
-      name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
-    } else if (type === "save") {
-      const label = pf1.config.savingThrows[key];
-      name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
-    } else if (type === "skill") {
-      const label = pf1.config.skills[key];
-      name = label ? (typeof label === "string" ? label : game.i18n.localize(label)) : key;
-    } else if (type === "dice") {
-      name = key;
-    }
-  }
+  let name = options.name || resolveCheckName({ type, key });
   // A selection request may carry no key at all, leaving nothing to name it by.
   if (!name && selectFromTable) name = options.flavor || game.i18n.localize("RR.Select.Title");
 
@@ -381,9 +415,15 @@ async function buildRequestData(options, { embedded = false } = {}) {
   }
   if (mode === "targeted") resolveTargetedActors(targetedActors);
 
+  // An opposed contest is exactly two sides measured against each other, so a
+  // DC would be a second, unrelated verdict printed beside the winner.
+  const opposed = (mode === "targeted" && targetedActors.length === 2)
+    ? (options.opposed ?? false)
+    : false;
+
   return {
     mode,
-    dc: dc != null ? Number(dc) : null,
+    dc: opposed ? null : (dc != null ? Number(dc) : null),
     showDC,
     showResults,
     rollMode,
@@ -397,6 +437,7 @@ async function buildRequestData(options, { embedded = false } = {}) {
     tableBounds,
     selectFromTable,
     allowRepick,
+    opposed,
     locked: false,
     summaryKey: options.summaryKey ?? null,
     rolledActors: {},
@@ -581,7 +622,16 @@ Hooks.once("ready", () => {
    *   pins specific tokens to the card (see targetedActors) instead of letting any player roll.
    * @param {object[]} [options.targetedActors]   - Required for mode "targeted": one entry per
    *   token, each needing only { id } (the token document ID). `tokenUUID`, `name`, `img`, and
-   *   `isHidden` are auto-resolved from the canvas token and may be overridden per entry.
+   *   `isHidden` are auto-resolved from the canvas token and may be overridden per entry. An entry
+   *   may also carry `check: { type, key }` to roll a *different* check from the card's own — the
+   *   row's button, its Roll All roll, its Aid Another and any roll applied to it all follow the
+   *   override. `name` is resolved from the key if omitted, and shown beside that row's portrait.
+   * @param {boolean} [options.opposed=false]     - Targeted mode with exactly two targets: compare
+   *   the two totals instead of measuring them against a DC. The card names the winner and marks
+   *   its row; the higher total wins, a tie goes to the higher check modifier, and two identical
+   *   modifiers are reported as a dead tie (RAW: reroll). Forces `dc` to null and suppresses the
+   *   highest/average aggregate line. Pair it with per-target `check` overrides for an asymmetric
+   *   contest such as Stealth against Perception.
    * @param {boolean} [options.autoRoll=false]    - Targeted mode only: immediately roll every
    *   target GM-side without dialogs, exactly like the card's Roll All button. createRequest does
    *   not resolve until every target has rolled, so the returned message's flags are fully

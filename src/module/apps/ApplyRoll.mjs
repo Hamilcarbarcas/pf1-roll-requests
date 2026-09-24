@@ -45,6 +45,23 @@ export class ApplyRoll {
   }
 
   /**
+   * The check a request expects from one particular roller. A card's rows
+   * normally all share `flags.request`; a row carrying a `check` of its own
+   * (an opposed card's two sides) is matched against that instead, so the
+   * defender's Perception roll is not measured against the attacker's Stealth.
+   *
+   * @param {object} flags - A request's flag state.
+   * @param {object|null} route - The route this roller would fill.
+   * @returns {{type: string, key: string, name: string}}
+   */
+  static wantFor(flags, route) {
+    const entry = route?.targetActorId
+      ? (flags.targetedActors ?? []).find(t => t.id === route.targetActorId)
+      : null;
+    return entry?.check ?? flags.request;
+  }
+
+  /**
    * Every request living on a message — the card's own, plus any embedded ones.
    *
    * @param {ChatMessage} message
@@ -201,7 +218,6 @@ export class ApplyRoll {
     const flags = RollRequestChat._readState(message, slot);
     if (!ApplyRoll.isApplicable(flags)) return [];
 
-    const want = flags.request;
     const out = [];
     const all = game.messages.contents;
     const start = Math.max(0, all.length - SCAN_LIMIT);
@@ -211,7 +227,7 @@ export class ApplyRoll {
       if (msg.id === message.id) continue;
 
       const subject = ApplyRoll.subjectOf(msg);
-      if (!subject || subject.type !== want.type || subject.key !== want.key) continue;
+      if (!subject) continue;
 
       const roll = ApplyRoll.rollOf(msg);
       if (!roll) continue;
@@ -219,8 +235,13 @@ export class ApplyRoll {
       const who = ApplyRoll.speakerOf(msg);
       if (!who) continue;
 
+      // Routed before the check is matched, because which check the card wants
+      // can depend on which row this roller lands in.
       const route = ApplyRoll.routeFor(flags, who);
       if (!route) continue;
+
+      const want = ApplyRoll.wantFor(flags, route);
+      if (subject.type !== want.type || subject.key !== want.key) continue;
 
       out.push({
         message: msg,
@@ -262,10 +283,10 @@ export class ApplyRoll {
       if (msg.id === sourceMessage.id) continue;
       for (const req of ApplyRoll.requestsOn(msg)) {
         if (!ApplyRoll.isApplicable(req.flags)) continue;
-        const want = req.flags.request;
-        if (want.type !== subject.type || want.key !== subject.key) continue;
         const route = ApplyRoll.routeFor(req.flags, who);
         if (!route) continue;
+        const want = ApplyRoll.wantFor(req.flags, route);
+        if (want.type !== subject.type || want.key !== subject.key) continue;
         out.push({ ...req, route, who });
       }
     }
@@ -321,18 +342,20 @@ export class ApplyRoll {
       return false;
     }
 
-    // Enforced here and not only in the pickers: this is public API, and the
-    // whole point of matching on PF1's own check subject is that an unrelated
-    // roll can never be fed into a request.
-    const subject = ApplyRoll.subjectOf(sourceMessage);
-    if (!subject || subject.type !== flags.request.type || subject.key !== flags.request.key) {
-      ui.notifications.warn(game.i18n.format("RR.Notif.ApplyWrongCheck", { name: flags.request.name }));
-      return false;
-    }
-
     const route = ApplyRoll.routeFor(flags, who);
     if (!route) {
       ui.notifications.warn(game.i18n.format("RR.Notif.ApplyNoSlot", { name: who.actor.name }));
+      return false;
+    }
+
+    // Enforced here and not only in the pickers: this is public API, and the
+    // whole point of matching on PF1's own check subject is that an unrelated
+    // roll can never be fed into a request. Matched against the row's own check
+    // where it has one, which is why the route is resolved first.
+    const want = ApplyRoll.wantFor(flags, route);
+    const subject = ApplyRoll.subjectOf(sourceMessage);
+    if (!subject || subject.type !== want.type || subject.key !== want.key) {
+      ui.notifications.warn(game.i18n.format("RR.Notif.ApplyWrongCheck", { name: want.name }));
       return false;
     }
 
@@ -378,7 +401,7 @@ export class ApplyRoll {
    */
   static async _buildEntry(flags, route, who, roll, sourceMessage, rollType) {
     const { actor } = who;
-    const notes = await RollRequestChat._getEffectNotes(actor, flags.request);
+    const notes = await RollRequestChat._getEffectNotes(actor, ApplyRoll.wantFor(flags, route));
 
     const entry = {
       tokenId: route.tokenId,

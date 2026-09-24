@@ -6,6 +6,7 @@
 // the Roll Options config window (to toggle visibility).
 
 import { MonsterLore } from "./apps/MonsterLore.mjs";
+import { OpposedCheck } from "./apps/OpposedCheck.mjs";
 
 /**
  * The selectable roll categories shown in the request-options grid, in display
@@ -89,6 +90,17 @@ export const QUICK_ACTIONS = [
     icon: "fa-dragon",
     closeOnUse: true,
     callback: () => MonsterLore.openWindow(),
+  },
+  {
+    // Opposed contests (Stealth vs Perception and friends). Like Monster Lore
+    // this opens a window of its own rather than firing a declarative request:
+    // the two sides roll different checks, which the baked-in `config` shape
+    // has no way to express.
+    key: "opposed-check",
+    label: "RR.Quick.Opposed",
+    icon: "fa-people-arrows",
+    closeOnUse: true,
+    callback: () => OpposedCheck.openWindow(),
   },
 ];
 

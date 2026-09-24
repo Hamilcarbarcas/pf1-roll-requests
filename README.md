@@ -70,6 +70,8 @@ The GM always sees the DC and pass/fail results. Players see them only if the GM
 
 **Rolling without a selected token:** Clicking a roll button rolls for your currently selected token. By default, when no token is selected it instead rolls for the actor set in your User Configuration; the GM can disable this under **Settings → Module Settings → Use Configured Actor When None Selected**, in which case clicking with no token selected warns you to select one. This does not affect per-target roll buttons on targeted cards, which are always tied to a specific token.
 
+**Skipping the roll dialog:** Clicking a roll button on a request card opens PF1's roll dialog, where you can add situational bonuses or change the roll mode before rolling. **Shift-click** skips the dialog and rolls straight away. Each user can flip this under **Settings → Module Settings → Skip Roll Dialog on Request Cards**: with it on, a plain click rolls straight away and Shift-click opens the dialog. The setting is per user, so it follows you to any computer you log in from. Aid Another bonuses already banked on the card are added to the roll either way. This covers the Roll and Aid Another buttons on every request card; selection requests (pick from a list) and raw-formula rolls have no dialog to skip.
+
 #### Apply Roll
 
 For when the roll already happened — a player rolled Perception on their sheet before the request went up, or an NPC's save was rolled by hand. **Apply Roll** records that existing chat roll on the request as though it had been rolled there: same total, same formula, same expandable dice breakdown, with the request's own effect notes filled in. GM-only, in both directions.
@@ -91,9 +93,15 @@ Requests that roll a raw formula and selection requests take no applied roll —
 
 ![Chat Message Filled](assets/auto-save-request.png)
 
-When a PF1e attack action that includes a saving throw is posted to chat, the module automatically converts it into an embedded targeted roll-request card. The original spell/attack card header and footer (damage buttons, effect notes, etc.) are preserved around the roll-request section.
+When a PF1e attack action that includes a saving throw is posted to chat, the module automatically converts it into an embedded targeted roll-request card. PF1's own card is kept around it intact — damage buttons, effect notes and all.
+
+PF1 puts its save button inside *every* attack entry on the card, because each hit forces its own save. The conversion follows suit: a spell with two damage entries, or a full attack with three attack rolls, gets its own request above each entry, so a target's save against the second hit is recorded separately from its save against the first. Each request keeps its own results, **Roll All** / **Roll NPCs**, and **Apply Roll**.
+
+A one-target request opens that target's defenses dropdown by itself only where the dropdown has something to answer: it must be the card's first request *and* sit on an entry that rolled an attack. On the requests below it, that would be the same creature's defenses repeated down the card; on a save-only entry — a spell that rolls damage and calls for a Reflex save, with no attack roll anywhere on the card — there is no hit to read the defenses against in the first place. Both start collapsed, and one click opens either.
 
 This feature is enabled by default and can be toggled in **Settings → Module Settings → Auto-Request Saving Throws**.
+
+PF1's own **Reflex DC 15** button inside each attack entry keeps working, and now feeds the request above it. Roll a save from it and the result is recorded on that entry's request automatically — same total, same breakdown, same pass/fail mark as a save rolled on the card itself. One click still rolls for every token you have selected, so each of them fills its own row. This only happens where it fits: the roller must have a row on that request and not have filled it yet. A save by a creature the action never targeted is left alone, and so is a reroll for a row that already has a result — replacing one stays a deliberate act through **Apply Roll**. Note that **Delete Roll After Applying**, if you have it on, applies here too: the save's own chat card is removed once it lands on the request.
 
 Another module can leave a specific target off the generated card while keeping it in the action's target list — see [`excludeTargets`](api.md#excluding-targets-from-an-auto-save-request) in the API reference.
 
@@ -124,6 +132,7 @@ From a player's perspective the card is indistinguishable from a saving throw �
 - **Select All / Select Passed / Select Failed** — canvas token-selection shortcuts that highlight the relevant tokens based on current results.
 - Hovering a target's portrait or name highlights that token on the canvas, the same way PF1's own target boxes do. Clicking the portrait selects it.
 - Clicking a target's **row** expands a collapsible dropdown. Before a roll it shows that creature's defenses; after a roll it shows the roll breakdown on top with the defenses below. Defenses include AC / touch / FF AC, CMD / flat-footed CMD, all three saving throws, plus spell resistance, damage reduction, energy resistance, active conditions, and any AC / CMD / save notes. The stats are labelled with the same icons PF1 uses in its target boxes — shield for AC, pointing hand for touch, shoe-prints for flat-footed, and PF1's own heart / arrow / brain for Fortitude / Reflex / Will. The two CMD stats take a leading fist to mark them out from AC, keeping PF1's shield and shoe-prints as their second glyph. Hover any of them for the full name. Each stat's glyph and value is coloured — red for AC, CMD and Fortitude, blue for touch AC and Will, green for flat-footed AC, flat-footed CMD and Reflex — with the AC row darkest and the saves row lightest, so a colour names the defense and its depth names the row.
+- With **[PF1 Combat Maneuvers](https://github.com/Hamilcarbarcas/pf1-combat-maneuvers)** installed, the **CMD row becomes expandable** whenever a maneuver's CMD differs from the creature's general CMD. It starts collapsed and looks exactly as it does without the module, so nothing changes until you open it. Expanding lists one row per deviating maneuver — the maneuver's own icon in place of the CMD shield, with the maneuver-specific CMD and flat-footed CMD beside it. Hovering either names both the maneuver and the defense — "Trip CMD", "Trip Flat-Footed CMD" — since the icon already says which maneuver the row is. Maneuvers that match the baseline are left out; they would only restate the number already above them. Without the module the row is an ordinary one, unchanged.
 - Clicking one of the **three saving throws** rolls it for that token straight away, posting PF1's normal save card. NPCs roll through without the dialog; a player-owned actor gets PF1's roll dialog so situational bonuses can be added. Hold **Shift** to invert that either way. Only actors you own are clickable, since PF1 refuses the roll otherwise. The roll uses your current roll mode, so set that first if an NPC's save shouldn't be public.
 - The dropdown's **Defenses** heading posts PF1's own defenses card to chat, whispered to you — the same card PF1's target boxes produce when you click a target's AC. It appears as a link only for actors you own, since PF1 refuses the card otherwise.
 - When there is only one target, all bulk and selection buttons are suppressed (no point in Roll All or Select Passed with a single token), and that target's dropdown is expanded from the start.
@@ -143,6 +152,7 @@ Available Quick Actions:
 - **Spot Checks** — prompts a Perception check from selected actors. Opens an actor picker (the same list as Prompt Actors, nothing checked to start, with **Select All** / **Select None** buttons below the list), then posts a **public** request card whose roll totals are hidden from players (the GM sees them), with no DC and no Aid Another.
 - **Quick Perception** — the same Perception check, taken from the tokens **selected on the canvas** instead of a picker (a Token Check, in effect). A small popup asks for a **DC** and **flavor text** first; both are optional, so clicking **OK** on an empty form is a normal use. The card is public with totals hidden from players, and has no Aid Another. Any DC you enter is used for the GM's pass/fail marks only — it is not shown to players, and nobody is blocked from rolling a check they cannot pass.
 - **Monster Lore** — opens the Monster Lore window (see below) instead of posting a card directly, and closes the Roll Request dialog.
+- **Opposed Check** — opens the Opposed Check window (see below) instead of posting a card directly, and closes the Roll Request dialog.
 
 Custom quick actions can be made via the mod API.
 
@@ -153,6 +163,30 @@ A GM-only window (opened from the **Monster Lore** Quick Action) for running a K
 The type selects the relevant Knowledge skill — Arcana (constructs, dragons, magical beasts), Dungeoneering (aberrations, oozes), Local (humanoids), Nature (animals, fey, monstrous humanoids, plants, vermin), The Planes (outsiders), Religion (undead). **Request Knowledge Checks** then fires a **public multi-check** (Aid Another off); DC = rarity base (5/10/15) + CR (fractional CRs count as 1), hidden from players while results are public.
 
 The card shows a live **"Questions earned"** tally (via the card-summary system): each passing check earns 1 question, +1 per full 5 by which it beats the DC, tallied across the party as results come in.
+
+#### Opposed Check
+
+A GM-only window (opened from the **Opposed Check** Quick Action) for contests decided by comparing two rolls rather than by a DC.
+
+Pick a **contest** from the list:
+
+| Contest | Initiator rolls | Responder rolls |
+| --- | --- | --- |
+| Stealth vs. Perception | Stealth | Perception |
+| Bluff vs. Sense Motive | Bluff | Sense Motive |
+| Disguise vs. Perception | Disguise | Perception |
+| Forgery (Linguistics) | Linguistics | Linguistics |
+| Strength vs. Strength | Strength | Strength |
+
+(Escape Artist has no entry: it is rolled against the binder's CMD, which is a static number rather than a roll.)
+
+Below the contest, every token on the current scene is listed — hidden ones included, marked with an eye-slash. Click a token to assign it to a side; click it again to free that side. The two sides are shown above the list with the check each one will roll, and the **swap** button between them flips the assignment. If you had two tokens selected (or targeted) when you opened the window, they are assigned for you. The **roll mode** and **flavor text** work as they do in the main dialog.
+
+**Request Opposed Roll** posts a two-row card. Each row rolls its own half of the contest — the check it rolls is printed beside the name — and the card carries no DC, so there are no pass/fail marks. Once both rolls are in, the card names the winner in a banner and marks the winning row with a crown. The banner and crown follow the same visibility as the rest of the card's results: on a card whose results are hidden from players, only the GM sees who won.
+
+Ties follow the book: the higher check modifier wins, and if those are also equal the card reports a **dead tie** and calls for a reroll.
+
+The card behaves like any other targeted card otherwise — **Roll All** / **Roll NPCs**, portrait hover highlighting, and **Apply Roll** all work, and Apply Roll matches each row against that row's own check rather than the card's.
 
 #### Configuring Roll Options
 

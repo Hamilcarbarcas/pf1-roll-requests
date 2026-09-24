@@ -177,19 +177,11 @@ export class ActionCheckConfig {
   // ----------------------------------------------------------
 
   static _skillOptions() {
+    // See RollRequestDialog#_getSkillOptions: pf1.config.skills is the only
+    // source, and a hard-coded custom-skill fallback did more harm than good.
     const skills = {};
     for (const [key, label] of Object.entries(pf1.config.skills)) {
       skills[key] = typeof label === "string" ? label : game.i18n.localize(label);
-    }
-    // Custom skills contributed by astora-mod (added via a preCreateActor hook).
-    const custom = {
-      ahy: "RR.CustomSkill.ahy",
-      csh: "RR.CustomSkill.csh",
-      psi: "RR.CustomSkill.psi",
-      kps: "RR.CustomSkill.kps",
-    };
-    for (const [key, nameKey] of Object.entries(custom)) {
-      if (!skills[key]) skills[key] = game.i18n.localize(nameKey);
     }
     return Object.fromEntries(Object.entries(skills).sort((a, b) => a[1].localeCompare(b[1])));
   }

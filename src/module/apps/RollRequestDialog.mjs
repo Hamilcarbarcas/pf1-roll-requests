@@ -552,20 +552,14 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   _getSkillOptions() {
     const skills = {};
 
-    // System-defined skills
+    // pf1.config.skills is the only source, custom skills included: a module
+    // that adds one registers it there at init (astora-mod and pf1-psionics
+    // both do). Hard-coding a fallback list here listed skills no actor has in
+    // a world without those modules, and — because the list had gone stale on
+    // "ahy" where the psionics spelling is "ahp" — produced a second, parallel
+    // Autohypnosis in a world with them.
     for (const [key, label] of Object.entries(pf1.config.skills)) {
       skills[key] = typeof label === "string" ? label : game.i18n.localize(label);
-    }
-
-    // Custom skills from astora-mod (added via preCreateActor hook)
-    const customSkills = {
-      ahy: "RR.CustomSkill.ahy",
-      csh: "RR.CustomSkill.csh",
-      psi: "RR.CustomSkill.psi",
-      kps: "RR.CustomSkill.kps",
-    };
-    for (const [key, nameKey] of Object.entries(customSkills)) {
-      if (!skills[key]) skills[key] = game.i18n.localize(nameKey);
     }
 
     // Sort alphabetically by display name

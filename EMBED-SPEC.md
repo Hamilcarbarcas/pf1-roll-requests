@@ -141,6 +141,15 @@ host that survives reloads should use.
   the obvious follow-up and would make PF1 attack cards composable with other modules for the first
   time — but it is a behaviour-preserving refactor of a working feature, and it should not ride
   along with the introduction of the mechanism it would be built on.
+
+  **Since done**, and not behaviour-preserving after all: the follow-up is what made *several*
+  requests on one PF1 card possible, and PF1 draws its save button inside every attack entry. So the
+  conversion now writes one embed per attack entry that has a save (`save-0`, `save-1`, …) and places
+  each above its entry at render time, with `message.content` left PF1's own. Two consequences worth
+  keeping in view: the widgets are render-time children of a card this module does not own, so they
+  are rebuilt from flags on every draw rather than stored; and cards converted before the change keep
+  their rewritten content, which is why `_rebuildCardContent` still concatenates `pf1HeaderHtml` /
+  `pf1FooterHtml` and why §1's account of the old mechanism is still worth reading.
 - **`excludeTargets` is auto-request-only** and stays that way. An embed's caller passes its target
   list directly, so there is nothing to exclude from.
 
