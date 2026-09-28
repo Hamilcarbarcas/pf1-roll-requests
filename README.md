@@ -28,6 +28,15 @@ The dialog lets you select:
 - **Aid Another** — Whether other players can aid (single-check mode only; forced off for saves and dice)
   - **Ignore aid requirement** — By default an aider must themselves be able to succeed on the check to aid. Tick this to let anyone attempt Aid Another regardless (also implied by *Allow un-passable checks*).
 - **Flavor text** — Optional line shown on the chat card beneath the title. The title itself always names the check being rolled.
+- **Subject** — Perception and Spellcraft only. The token the check is about; see below.
+
+#### Subject (Perception / Spellcraft)
+
+With Perception or Spellcraft picked, a **Subject** section with a **Choose Subject** button appears in the left column, under Aid Another. Select one token and click it to make that token the check's subject; a chip shows it, and **×** clears it. The subject is optional and is not remembered between opens.
+
+Every roll against a subject takes a **Distance** penalty of −1 per full 10 ft between the rolling token and the subject, measured between their nearest squares with elevation included. It shows as a labeled term in the roll dialog and in the result's breakdown, and counts toward the natural-20 gate below. A roller with no token on the subject's scene takes no penalty. The GM sees a **Subject:** line on the card.
+
+Token Check and DM Check read the canvas selection when you click **Request Roll**, so choose the subject first, then select the rollers.
 
 #### Prompt Actors (Selection Check)
 
@@ -100,6 +109,8 @@ PF1 puts its save button inside *every* attack entry on the card, because each h
 A one-target request opens that target's defenses dropdown by itself only where the dropdown has something to answer: it must be the card's first request *and* sit on an entry that rolled an attack. On the requests below it, that would be the same creature's defenses repeated down the card; on a save-only entry — a spell that rolls damage and calls for a Reflex save, with no attack roll anywhere on the card — there is no hit to read the defenses against in the first place. Both start collapsed, and one click opens either.
 
 This feature is enabled by default and can be toggled in **Settings → Module Settings → Auto-Request Saving Throws**.
+
+The request's DC follows PF1's **Obscure Save DCs** system setting. With it on, players who can't observe the acting creature see neither the request's DC nor the number on PF1's save button.
 
 PF1's own **Reflex DC 15** button inside each attack entry keeps working, and now feeds the request above it. Roll a save from it and the result is recorded on that entry's request automatically — same total, same breakdown, same pass/fail mark as a save rolled on the card itself. One click still rolls for every token you have selected, so each of them fills its own row. This only happens where it fits: the roller must have a row on that request and not have filled it yet. A save by a creature the action never targeted is left alone, and so is a reroll for a row that already has a result — replacing one stays a deliberate act through **Apply Roll**. Note that **Delete Roll After Applying**, if you have it on, applies here too: the save's own chat card is removed once it lands on the request.
 
@@ -186,6 +197,8 @@ Below the contest, every token on the current scene is listed — hidden ones in
 
 Ties follow the book: the higher check modifier wins, and if those are also equal the card reports a **dead tie** and calls for a reroll.
 
+A side rolling Perception is measured against the other side as its [subject](#subject-perception--spellcraft), so it takes the distance penalty automatically.
+
 The card behaves like any other targeted card otherwise — **Roll All** / **Roll NPCs**, portrait hover highlighting, and **Apply Roll** all work, and Apply Roll matches each row against that row's own check rather than the card's.
 
 #### Configuring Roll Options
@@ -194,6 +207,17 @@ Under **Settings → Module Settings → Configure Roll Options** you can show o
 
 - **Whole categories** — Ability Checks, Saving Throws, Skill Checks, Dice, and Quick Actions.
 - **Individual Quick Actions** — toggle each entry on or off (applies only while the Quick Actions category is shown).
+
+### House Rules
+
+One setting, **Settings → Module Settings → House Rules**, off by default, turns on every non-RAW rule in the module:
+
+| Rule | RAW | With House Rules |
+| --- | --- | --- |
+| Aid Another | +2 | +2, and +1 more per 5 over 10 |
+| Identify a spell being cast (Spellcraft) | DC 15 + spell level | +5 for each of the verbal and somatic components the spell lacks |
+
+This replaces the old **Uncap Aid Another** setting; a world that had it on starts with House Rules on.
 
 ### Custom Formulas & Result Tables
 

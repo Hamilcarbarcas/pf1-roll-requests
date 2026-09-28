@@ -14,6 +14,8 @@ import { registerQuickAction, unregisterQuickAction, getQuickActions } from "./r
 import { MONSTER_LORE_SUMMARY_KEY, monsterLoreSummary } from "./apps/MonsterLore.mjs";
 import { OPPOSED_SUMMARY_KEY, opposedSummary } from "./apps/OpposedCheck.mjs";
 import { SocketHandler } from "./SocketHandler.mjs";
+import { HOUSE_RULES_SETTING, LEGACY_UNCAP_SETTING, migrateLegacySetting, spellcraftDC } from "./house-rules.mjs";
+import { normalizeSubject, takesSubject } from "./subject.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -36,6 +38,9 @@ Hooks.once("init", () => {
   // Public API for recording an existing chat roll on a request (GM-only).
   game.pf1RollRequests.applyRoll = ApplyRoll.apply;
   game.pf1RollRequests.applyRollCandidates = ApplyRoll.candidatesFor;
+
+  // The DC to identify a spell as it is cast, House Rules applied (SUBJECT-SPEC §8.1).
+  game.pf1RollRequests.spellcraftDC = spellcraftDC;
 
   // Setting to auto-convert PF1 attack messages with saves into roll-request cards
   game.settings.register(MODULE_ID, "auto-save-request", {
@@ -95,12 +100,21 @@ Hooks.once("init", () => {
     default: "none",
   });
 
-  // Setting to allow Aid Another to grant scaling bonuses for high check results.
-  game.settings.register(MODULE_ID, "uncap-aid-another", {
-    name: "RR.Settings.UncapAid.Name",
-    hint: "RR.Settings.UncapAid.Hint",
+  // One switch for every non-RAW rule in the module (house-rules.mjs).
+  game.settings.register(MODULE_ID, HOUSE_RULES_SETTING, {
+    name: "RR.Settings.HouseRules.Name",
+    hint: "RR.Settings.HouseRules.Hint",
     scope: "world",
     config: true,
+    type: Boolean,
+    default: false,
+  });
+
+  // Replaced by House Rules. Kept registered, hidden, so a stored value can be
+  // carried across at ready; drop it a release later.
+  game.settings.register(MODULE_ID, LEGACY_UNCAP_SETTING, {
+    scope: "world",
+    config: false,
     type: Boolean,
     default: false,
   });
@@ -176,6 +190,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
   SocketHandler.register();
+  migrateLegacySetting();
 
   // Register the Monster Lore card summary (live "Questions earned" tally).
   RollRequestChat.registerSummary(MONSTER_LORE_SUMMARY_KEY, monsterLoreSummary);
@@ -291,6 +306,8 @@ function resolveTargetedActors(targetedActors) {
     // A per-target check override needs a display name like the card's own
     // request does; resolve it here so callers may pass { type, key } alone.
     if (entry.check && !entry.check.name) entry.check.name = resolveCheckName(entry.check);
+    // A row's own subject (SUBJECT-SPEC §3.1), stored in the one shape.
+    if (Object.hasOwn(entry, "subject")) entry.subject = normalizeSubject(entry.subject);
   }
   return targetedActors ?? [];
 }
@@ -421,6 +438,16 @@ async function buildRequestData(options, { embedded = false } = {}) {
     ? (options.opposed ?? false)
     : false;
 
+  // The token the check is about (SUBJECT-SPEC §3). Kept whatever the check,
+  // but only a Perception or Spellcraft roll is ever modified by it.
+  const subject = normalizeSubject(options.subject);
+  if (options.subject && !subject) {
+    console.warn(`${MODULE_ID} | subject ignored: expected a token uuid, TokenDocument or Token.`);
+  } else if (subject && !takesSubject({ type, key })) {
+    console.warn(`${MODULE_ID} | subject set on a ${type}/${key} request, which it does not modify `
+      + `(only Perception and Spellcraft take subject modifiers).`);
+  }
+
   return {
     mode,
     dc: opposed ? null : (dc != null ? Number(dc) : null),
@@ -438,6 +465,7 @@ async function buildRequestData(options, { embedded = false } = {}) {
     selectFromTable,
     allowRepick,
     opposed,
+    subject,
     locked: false,
     summaryKey: options.summaryKey ?? null,
     rolledActors: {},
@@ -676,6 +704,9 @@ Hooks.once("ready", () => {
    *   filled — their own token in single/multi, in targeted the target they may roll for — so no
    *   one can overwrite another's choice. onResult therefore fires again for that actor, while
    *   awaitResult still resolves on the first pick only. Ignored without `selectFromTable`.
+   * @param {string|TokenDocument|Token} [options.subject] - The token the check is about. Perception
+   *   and Spellcraft rolls take −1 per 10 ft between roller and subject (SUBJECT-SPEC.md). A `targetedActors` entry may
+   *   carry its own `subject`, overriding this for that row.
    * @param {string} [options.summaryKey]         - Key of a summary formatter registered via
    *   game.pf1RollRequests.registerSummary(). Renders a live aggregate line into the card, recomputed
    *   on each roll. Player visibility follows showResults. Currently displayed in multi-check cards.
@@ -938,6 +969,8 @@ Hooks.once("ready", () => {
     }
 
     if (Array.isArray(changes.targetedActors)) resolveTargetedActors(changes.targetedActors);
+    // Same shapes createRequest takes; `subject: null` clears it.
+    if (Object.hasOwn(changes, "subject")) changes = { ...changes, subject: normalizeSubject(changes.subject) };
 
     const updateData = {};
     for (const [key, value] of Object.entries(changes)) {

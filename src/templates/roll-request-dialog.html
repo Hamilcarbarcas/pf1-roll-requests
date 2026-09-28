@@ -69,6 +69,15 @@
                 </label>
             </div>
 
+            <!-- Subject (SUBJECT-SPEC §6): Perception and Spellcraft only -->
+            <div class="form-group arr-subject-control" {{#unless showSubject}}style="display:none;"{{/unless}}>
+                <label>{{localize "RR.Subject.Label"}}</label>
+                <div class="arr-subject-chip-slot"></div>
+                <button type="button" data-action="chooseSubject" title="{{localize "RR.Subject.ChooseHint"}}">
+                    <i class="fa-solid fa-crosshairs" inert></i> {{localize "RR.Subject.Choose"}}
+                </button>
+            </div>
+
             <!-- Prompt Actors (selection mode only) -->
             <div class="arr-actor-selection" {{#unless (eq checkMode "selection")}}style="display:none;"{{/unless}}>
                 <label class="arr-actor-selection-label">{{localize "RR.Dialog.PromptActors"}}</label>

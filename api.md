@@ -31,6 +31,7 @@ Seedable fields, all optional:
 | `includeAid`, `ignoreAidRequirement`, `allowUnpassable` | booleans |
 | `selectedRequest` | `{ type, key, name }` — the check itself |
 | `targetedActors` | see below |
+| `subject` | a token uuid, TokenDocument or Token; see [Subjects](#subjects-distance). Not remembered between opens |
 
 Anything you do not seed comes from the settings the dialog remembers between opens, so an
 unseeded `openDialog()` is exactly the button's behavior.
@@ -112,6 +113,32 @@ game.pf1RollRequests.createRequest({
   ],
 });
 ```
+
+### Subjects: distance
+
+`subject` names the token a check is about. Perception and Spellcraft rolls on the request then take a `Distance` penalty per roller: −1 per full 10 ft between the roller's token and the subject, measured between their nearest squares with elevation included.
+
+```js
+game.pf1RollRequests.createRequest({
+  type: "skill", key: "spl", dc: 18, mode: "multi",
+  subject: casterToken.document.uuid,   // a token uuid, TokenDocument, or Token
+});
+```
+
+- Accepted by `createRequest`, `embed`, `updateEmbed` (`subject: null` clears it) and `openDialog`. Stored as `subject: { tokenUuid }`; the token is looked up again at each roll.
+- A `targetedActors` entry may carry its own `subject`, overriding the card's for that row and for Aid Another aimed at it.
+- The penalty goes in PF1's situational bonus next to any banked aid, so it shows in the roll dialog and the breakdown, and it counts against the natural-20 gate. Roll All and Apply Roll apply it too.
+- A distance that cannot be measured (no roller token on the subject's scene, a deleted subject) is not applied. The roll is never blocked.
+- Result entries carry `distance: { feet, penalty }`, or `null` when not measured.
+- A subject on any other check is kept but has no effect, with a console warning.
+
+### Spellcraft DC
+
+```js
+game.pf1RollRequests.spellcraftDC({ level: 3, verbal: false, somatic: true }); // 18, or 23 with House Rules
+```
+
+The DC to identify a spell as it is cast: 15 + spell level, plus 5 for each missing verbal or somatic component when the **House Rules** setting is on. Take the DC from here rather than reading the setting.
 
 ### Opposed requests
 

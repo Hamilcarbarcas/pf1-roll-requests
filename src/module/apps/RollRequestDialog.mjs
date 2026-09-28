@@ -3,6 +3,7 @@
 // ============================================================
 
 import { getQuickActions } from "../roll-options.mjs";
+import { normalizeSubject, takesSubject } from "../subject.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -38,6 +39,10 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
         if (seed[key] !== undefined) this[key] = seed[key];
       }
     }
+
+    // The token Perception / Spellcraft is measured against (SUBJECT-SPEC §6).
+    // Never remembered between opens: it names a token in one moment.
+    this.subject = normalizeSubject(seed?.subject);
   }
 
   /** Fields `openDialog` may pre-fill. Mirrors what the constructor assigns. */
@@ -107,6 +112,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       selectOption: RollRequestDialog.#onSelectOption,
       requestRoll: RollRequestDialog.#onRequestRoll,
       quickAction: RollRequestDialog.#onQuickAction,
+      chooseSubject: RollRequestDialog.#onChooseSubject,
+      clearSubject: RollRequestDialog.#onClearSubject,
     },
     position: { width: 700 },
   };
@@ -197,6 +204,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       allowUnpassable: this.allowUnpassable,
       optionGroups,
       selectedRequest: this.selectedRequest,
+      showSubject: takesSubject(this.selectedRequest),
       promptActors,
       showTokenPreview: isDMCheck || this.checkMode === "token",
       tokenPreview: RollRequestDialog.getSelectedTokenTargets({ npcOnly: isDMCheck }),
@@ -676,6 +684,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     );
 
     this._syncAidCheckbox();
+    this._refreshSubjectChip();
   }
 
   _syncAidCheckbox() {
@@ -712,6 +721,72 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
     this.selectedRequest = { type, key, name };
     this._syncAidCheckbox();
+    this._syncSubjectControl();
+  }
+
+  // ---- Subject (SUBJECT-SPEC §6) ----
+
+  /** The chip's name and portrait, or null when there is no live subject. */
+  _subjectDisplay() {
+    const doc = this.subject?.tokenUuid ? fromUuidSync(this.subject.tokenUuid) : null;
+    if (!doc) return null;
+    return { name: doc.name, img: doc.actor?.img ?? doc.texture?.src };
+  }
+
+  /**
+   * Show the subject control only for a check it modifies. Toggled in place
+   * rather than re-rendered, since the DC and flavor inputs only save on blur.
+   */
+  _syncSubjectControl() {
+    const control = this.element?.querySelector(".arr-subject-control");
+    if (control) control.style.display = takesSubject(this.selectedRequest) ? "" : "none";
+  }
+
+  /** Redraw the subject chip in place, for the same reason as above. */
+  _refreshSubjectChip() {
+    const slot = this.element?.querySelector(".arr-subject-chip-slot");
+    if (!slot) return;
+    const subject = this._subjectDisplay();
+    if (!subject) {
+      slot.replaceChildren();
+      return;
+    }
+
+    const chip = document.createElement("span");
+    chip.className = "arr-subject-chip flexrow";
+    chip.title = game.i18n.localize("RR.Subject.ChipHint");
+
+    const img = document.createElement("img");
+    img.src = subject.img;
+    img.alt = subject.name;
+
+    const name = document.createElement("span");
+    name.className = "arr-subject-name";
+    name.textContent = subject.name;
+
+    const clear = document.createElement("a");
+    clear.className = "arr-subject-clear";
+    clear.dataset.action = "clearSubject";
+    clear.title = game.i18n.localize("RR.Subject.Clear");
+    clear.innerHTML = '<i class="fas fa-times" inert></i>';
+
+    chip.append(img, name, clear);
+    slot.replaceChildren(chip);
+  }
+
+  static #onChooseSubject() {
+    const controlled = canvas.tokens?.controlled ?? [];
+    if (controlled.length !== 1) {
+      ui.notifications.warn(game.i18n.localize("RR.Subject.SelectOne"));
+      return;
+    }
+    this.subject = normalizeSubject(controlled[0].document);
+    this._refreshSubjectChip();
+  }
+
+  static #onClearSubject() {
+    this.subject = null;
+    this._refreshSubjectChip();
   }
 
   static #onRequestRoll(_event, _target) {
@@ -767,6 +842,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       isDMCheck,
       isTokenCheck,
       request: this.selectedRequest,
+      // Sent only with a check it modifies; kept on the dialog otherwise.
+      subject: takesSubject(this.selectedRequest) ? this.subject : null,
       rolledActors: {},
       aidResults: {},
       aidTotal: 0,

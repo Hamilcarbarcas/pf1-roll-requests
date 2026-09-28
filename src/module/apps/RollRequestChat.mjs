@@ -10,6 +10,8 @@
 import { ApplyRoll } from "./ApplyRoll.mjs";
 import { ApplyRollPicker } from "./ApplyRollPicker.mjs";
 import { opposedOutcome } from "./OpposedCheck.mjs";
+import { joinTerms, subjectFor, subjectModifiers } from "../subject.mjs";
+import { aidBonusFor } from "../house-rules.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -508,6 +510,8 @@ export class RollRequestChat {
       targetsOnly: flags.targetsOnly ?? false,
       locked: flags.locked ?? false,
       checkKindLabel: RollRequestChat._getCheckKindLabel(flags),
+      // GM-only: the subject may be a hidden or name-obscured token.
+      subjectName: flags.subject?.tokenUuid ? (fromUuidSync(flags.subject.tokenUuid)?.name ?? "") : "",
       description: flags.description ?? "",
       tableHtml: RollRequestChat._renderResultTable(flags),
       summaryHtml: RollRequestChat._renderSummary(flags),
@@ -589,6 +593,23 @@ export class RollRequestChat {
   // where the element came from and which flag scope drives it.
   // ----------------------------------------------------------
 
+  /**
+   * Whether this user may see the save DC on a PF1 action card: PF1's own rule
+   * for the save button (utils/chat.mjs hideGMSensitiveInfo). Hidden only with
+   * the system's "Obscure Save DCs" on, and then only from a user who neither
+   * wrote the message nor can observe its speaker.
+   *
+   * @param {ChatMessage} message
+   * @returns {boolean}
+   */
+  static _saveDCVisible(message) {
+    if (game.user.isGM) return true;
+    if (!game.settings.get("pf1", "obscureSaveDCs")) return true;
+    if (message?.isAuthor) return true;
+    const actor = ChatMessage.getSpeakerActor(message?.speaker);
+    return !!actor?.testUserPermission(game.user, "OBSERVER");
+  }
+
   static async _activateCard(message, card, flags, slot = null) {
     // Before the visibility pass below, not after: on a card that hides its
     // results the crown is `.gm-only`, and adding it once the strip has run
@@ -605,6 +626,11 @@ export class RollRequestChat {
       // block that stays, so it has to be undone rather than removed.
       card.querySelectorAll(".arr-winner-gm-only").forEach(el =>
         el.classList.remove("arr-opposed-winner", "arr-winner-gm-only"));
+      // An auto-save request shows its DC exactly when PF1's own save button on
+      // the same card does.
+      if (flags?.isSaveRequest && !RollRequestChat._saveDCVisible(message)) {
+        card.querySelectorAll(".arr-dc-display").forEach(el => el.remove());
+      }
     }
 
     if (!flags || !flags.request) return;
@@ -1623,7 +1649,9 @@ export class RollRequestChat {
     const dc = currentFlags.dc;
 
     // --- Acquire actor and tokenId based on roll type ---
-    let actor, tokenId;
+    // rollerDoc is the roller's token where one is known; the subject
+    // modifiers fall back to the actor's one token on the subject's scene.
+    let actor, tokenId, rollerDoc = null;
     if (rollType === "targeted") {
       // If the target entry has a tokenUUID, look up via the token (handles unlinked tokens).
       // Otherwise fall back to actor ID lookup (dialog-created requests with linked actors).
@@ -1632,6 +1660,7 @@ export class RollRequestChat {
         const tokenDoc = fromUuidSync(entry.tokenUUID);
         actor = tokenDoc?.actor;
         tokenId = tokenDoc?.id ?? null;
+        rollerDoc = tokenDoc ?? null;
       } else {
         actor = game.actors.get(targetActorId);
         tokenId = actor?.getActiveTokens?.()?.[0]?.id ?? null;
@@ -1644,6 +1673,7 @@ export class RollRequestChat {
         actor = token.actor;
         if (!actor) { ui.notifications.warn(game.i18n.localize("RR.Notif.TokenNoActor")); return; }
         tokenId = token.id;
+        rollerDoc = token.document;
       } else if (game.settings.get(MODULE_ID, "use-configured-actor") && game.user.character) {
         // Nothing selected: fall back to the actor set in this user's configuration.
         actor = game.user.character;
@@ -1792,6 +1822,17 @@ export class RollRequestChat {
       }
     }
 
+    // --- Subject modifiers (SUBJECT-SPEC §4) ---
+    // Worked out once, here, so the feasibility gate and the roll see the same
+    // numbers. An aid roll aimed at a row measures against that row's subject.
+    const rowId = (rollType === "targeted" || rollType === "targetedAid") ? targetActorId : null;
+    const subjectMods = subjectModifiers({
+      check: request,
+      subject: subjectFor(currentFlags, rowId),
+      tokenDoc: rollerDoc,
+      actor,
+    });
+
     // --- Validation: Natural-20 feasibility check ---
     if (dc != null && request.type !== "dice" && request.type !== "save" && !currentFlags.isSaveRequest) {
       const isAidRoll = rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid";
@@ -1805,6 +1846,8 @@ export class RollRequestChat {
       if (!bypass) {
         let maxPossible = RollRequestChat._getMaxRoll(actor, request);
         if (maxPossible !== null) {
+          // The subject penalties go on the roll, so they come off its ceiling.
+          maxPossible += subjectMods.total;
           // A primary roller counts the aid already banked toward this check, so
           // someone who can't reach the DC alone but can *with* aid may still roll.
           // (Mirrors the aid bonus pre-populated into their actual roll below.)
@@ -1827,19 +1870,20 @@ export class RollRequestChat {
 
     // --- Perform the Roll ---
     let rollResult;
+    const terms = subjectMods.terms;
     try {
       if (rollType === "targeted" && currentFlags.includeAid) {
         // Pre-populate this actor's accumulated aid bonus into the roll dialog
         const aidTotal = RollRequestChat._calculateAidTotalForActor(currentFlags, targetActorId);
-        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal, skipDialog);
+        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal, skipDialog, terms);
       } else if (rollType === "primary" && currentFlags.includeAid) {
-        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, null, skipDialog);
+        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, null, skipDialog, terms);
       } else if (rollType === "multi" && currentFlags.includeAid) {
         // Use the current unredeemed aid pool (resets to 0 after each primary roll)
         const aidTotal = currentFlags.aidTotal || 0;
-        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal, skipDialog);
+        rollResult = await RollRequestChat._rollWithAidBonus(actor, request, currentFlags, dc, aidTotal, skipDialog, terms);
       } else {
-        rollResult = await RollRequestChat._performRoll(actor, request, dc, { skipDialog });
+        rollResult = await RollRequestChat._performRoll(actor, request, dc, { skipDialog }, terms);
       }
     } catch (err) {
       console.error(`${MODULE_ID} | Roll error:`, err);
@@ -1866,20 +1910,13 @@ export class RollRequestChat {
       naturalRoll: rollResult.dice?.[0]?.results?.[0]?.result ?? null,
       rollData: rollResult.toJSON(),
       notes,
+      distance: subjectMods.distance,
     };
 
     // For Aid rolls: calculate the bonus contributed
     if (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid") {
-      if (resultEntry.total >= 10) {
-        // Scaling +1 per 5 over the DC only applies when the uncap setting is enabled.
-        const uncapped = game.settings.get(MODULE_ID, "uncap-aid-another");
-        const extraBonus = uncapped ? Math.floor((resultEntry.total - 10) / 5) : 0;
-        resultEntry.aidBonus = 2 + extraBonus;
-        resultEntry.aidSuccess = true;
-      } else {
-        resultEntry.aidBonus = 0;
-        resultEntry.aidSuccess = false;
-      }
+      resultEntry.aidBonus = aidBonusFor(resultEntry.total);
+      resultEntry.aidSuccess = resultEntry.aidBonus > 0;
     }
 
     await RollRequestChat._commitResult(message, rollType, resultEntry, currentFlags, { ...opts, isRepick });
@@ -1912,13 +1949,16 @@ export class RollRequestChat {
   // Perform a silent roll (no chat message)
   // ----------------------------------------------------------
 
-  static async _performRoll(actor, request, dc, extraOpts = {}) {
+  static async _performRoll(actor, request, dc, extraOpts = {}, terms = []) {
     const opts = {
       skipDialog: false,
       chatMessage: false,
       ...extraOpts,
     };
     if (dc != null) opts.dc = dc;
+    // Subject modifiers ride in the situational bonus, where the roller sees them.
+    const bonus = joinTerms(terms);
+    if (bonus) opts.bonus = bonus;
 
     let msg;
     if (request.type === "ability") {
@@ -1953,7 +1993,7 @@ export class RollRequestChat {
   // Perform roll with aid bonus pre-populated in dialog
   // ----------------------------------------------------------
 
-  static async _rollWithAidBonus(actor, request, flags, dc, aidTotalOverride = null, skipDialog = false) {
+  static async _rollWithAidBonus(actor, request, flags, dc, aidTotalOverride = null, skipDialog = false, terms = []) {
     const aidTotal = aidTotalOverride !== null
       ? aidTotalOverride
       : RollRequestChat._calculateAidTotal(flags);
@@ -1964,10 +2004,12 @@ export class RollRequestChat {
     };
     if (dc != null) opts.dc = dc;
 
-    // Pre-populate the situational bonus with the aid total
-    if (aidTotal > 0) {
-      opts.bonus = `${aidTotal}[Aid Another]`;
-    }
+    // Pre-populate the situational bonus with the aid total and any subject modifiers
+    const bonus = joinTerms([
+      ...(aidTotal > 0 ? [{ value: aidTotal, flavor: "Aid Another" }] : []),
+      ...terms,
+    ]);
+    if (bonus) opts.bonus = bonus;
 
     let msg;
     if (request.type === "ability") {
@@ -2207,34 +2249,53 @@ export class RollRequestChat {
    */
   static _foldAidIntoResult(entry, aidTotal) {
     if (!(aidTotal > 0)) return entry;
-    const patched = { ...entry, aidApplied: aidTotal };
+    const flavor = game.i18n.localize("RR.Card.AidAnother");
+    return { ...RollRequestChat._foldTermsIntoResult(entry, [{ value: aidTotal, flavor }]), aidApplied: aidTotal };
+  }
+
+  /**
+   * Append labeled numeric terms to an already-rolled result as real terms on
+   * its roll, so the expanded breakdown still adds up to the total shown.
+   *
+   * @param {object} entry - The result entry.
+   * @param {Array<{value: number, flavor: string}>} terms
+   * @returns {object} A patched copy, or the entry unchanged when there is nothing to add.
+   */
+  static _foldTermsIntoResult(entry, terms) {
+    const parts = (terms ?? []).filter(t => t.value);
+    if (!parts.length) return entry;
+    const sum = parts.reduce((s, t) => s + t.value, 0);
+    const patched = { ...entry };
 
     if (!entry.rollData) {
-      patched.total = (entry.total ?? 0) + aidTotal;
+      patched.total = (entry.total ?? 0) + sum;
       return patched;
     }
 
     try {
       const { OperatorTerm, NumericTerm } = foundry.dice.terms;
-      const flavor = game.i18n.localize("RR.Card.AidAnother");
-
-      // OperatorTerm marks itself evaluated in its constructor; NumericTerm does
-      // not, and a roll restores from data only when every term says evaluated.
-      const op = new OperatorTerm({ operator: "+" });
-      const num = new NumericTerm({ number: aidTotal, options: { flavor } });
-      num.evaluate();
-
       const data = foundry.utils.deepClone(entry.rollData);
-      data.terms = [...data.terms, op.toJSON(), num.toJSON()];
-      data.total = (entry.total ?? 0) + aidTotal;
-      data.formula = `${data.formula} + ${aidTotal}[${flavor}]`;
+      let formula = data.formula;
 
+      for (const { value, flavor } of parts) {
+        // OperatorTerm marks itself evaluated in its constructor; NumericTerm does
+        // not, and a roll restores from data only when every term says evaluated.
+        const operator = value < 0 ? "-" : "+";
+        const op = new OperatorTerm({ operator });
+        const num = new NumericTerm({ number: Math.abs(value), options: { flavor } });
+        num.evaluate();
+        data.terms = [...data.terms, op.toJSON(), num.toJSON()];
+        formula = `${formula} ${operator} ${Math.abs(value)}[${flavor}]`;
+      }
+
+      data.total = (entry.total ?? 0) + sum;
+      data.formula = formula;
       patched.total = data.total;
       patched.formula = data.formula;
       patched.rollData = data;
     } catch (err) {
-      console.error(`${MODULE_ID} | Could not fold aid into an applied roll:`, err);
-      patched.total = (entry.total ?? 0) + aidTotal;
+      console.error(`${MODULE_ID} | Could not fold terms into an applied roll:`, err);
+      patched.total = (entry.total ?? 0) + sum;
     }
 
     return patched;
@@ -3447,11 +3508,12 @@ export class RollRequestChat {
       if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
 
       // Resolve actor: use tokenUUID when present (handles unlinked tokens).
-      let actor, tokenId;
+      let actor, tokenId, rollerDoc = null;
       if (target.tokenUUID) {
         const tokenDoc = fromUuidSync(target.tokenUUID);
         actor = tokenDoc?.actor;
         tokenId = tokenDoc?.id ?? null;
+        rollerDoc = tokenDoc ?? null;
       } else {
         actor = game.actors.get(target.id);
         tokenId = actor?.getActiveTokens?.()?.[0]?.id ?? null;
@@ -3466,10 +3528,16 @@ export class RollRequestChat {
 
       // Honour a row's own check, as the per-row button does.
       const request = target.check ?? initialFlags.request;
+      const subjectMods = subjectModifiers({
+        check: request,
+        subject: subjectFor(initialFlags, target.id),
+        tokenDoc: rollerDoc,
+        actor,
+      });
 
       let rollResult;
       try {
-        rollResult = await RollRequestChat._performRoll(actor, request, initialFlags.dc, { skipDialog: true });
+        rollResult = await RollRequestChat._performRoll(actor, request, initialFlags.dc, { skipDialog: true }, subjectMods.terms);
       } catch (err) {
         console.error(`${MODULE_ID} | Bulk roll error for ${actor.name}:`, err);
         continue;
@@ -3488,6 +3556,7 @@ export class RollRequestChat {
         naturalRoll: rollResult.dice?.[0]?.results?.[0]?.result ?? null,
         rollData: rollResult.toJSON(),
         notes,
+        distance: subjectMods.distance,
       };
 
       await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id, slot });

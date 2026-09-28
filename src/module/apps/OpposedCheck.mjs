@@ -10,6 +10,8 @@
 //
 // Opened as a Quick Action from the Roll Request window (see roll-options.mjs).
 
+import { takesSubject } from "../subject.mjs";
+
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const MODULE_ID = "pf1-roll-requests";
@@ -235,6 +237,14 @@ export class OpposedCheck extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     const contest = this._contest();
+    // A side rolling Perception is measured against the other side
+    // (SUBJECT-SPEC §3.2). Read from the sides as they stand, so a swap needs
+    // nothing of its own.
+    const row = (tokenId, check, otherId) => {
+      const entry = { id: tokenId, check: { ...check, name: checkLabel(check) } };
+      if (takesSubject(check)) entry.subject = this._token(otherId)?.document?.uuid ?? null;
+      return entry;
+    };
     // Each side carries its own check on its target entry; the card's top-level
     // request stays the initiating side's, which is what a target with no
     // override of its own would fall back to.
@@ -243,8 +253,8 @@ export class OpposedCheck extends HandlebarsApplicationMixin(ApplicationV2) {
       name: game.i18n.localize(contest.label),
       mode: "targeted",
       targetedActors: [
-        { id: this.sideA, check: { ...contest.a, name: checkLabel(contest.a) } },
-        { id: this.sideB, check: { ...contest.b, name: checkLabel(contest.b) } },
+        row(this.sideA, contest.a, this.sideB),
+        row(this.sideB, contest.b, this.sideA),
       ],
       dc: null,
       includeAid: false,

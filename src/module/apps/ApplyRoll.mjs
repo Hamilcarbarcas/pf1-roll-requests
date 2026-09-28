@@ -15,6 +15,8 @@
 // original card did.
 
 import { RollRequestChat } from "./RollRequestChat.mjs";
+import { subjectFor, subjectModifiers } from "../subject.mjs";
+import { aidBonusFor } from "../house-rules.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -376,7 +378,24 @@ export class ApplyRoll {
       if (!ok) return false;
     }
 
-    const resultEntry = await ApplyRoll._buildEntry(flags, route, who, roll, sourceMessage, rollType);
+    let resultEntry = await ApplyRoll._buildEntry(flags, route, who, roll, sourceMessage, rollType);
+
+    // The subject penalties a roll made on the card would have carried, measured
+    // from the source roll's speaker token now (SUBJECT-SPEC §5). Folded here
+    // rather than in the queue: unlike banked aid, nothing else writes them.
+    const subjectMods = subjectModifiers({
+      check: want,
+      subject: subjectFor(flags, route.targetActorId ?? null),
+      tokenDoc: who.tokenDoc,
+      actor: who.actor,
+    });
+    resultEntry = RollRequestChat._foldTermsIntoResult(resultEntry, subjectMods.terms);
+    resultEntry.distance = subjectMods.distance;
+    // Aid is scored on the final total, so rescore once the penalties are in.
+    if (rollType === "aid" || rollType === "multiAid" || rollType === "targetedAid") {
+      resultEntry.aidBonus = aidBonusFor(resultEntry.total);
+      resultEntry.aidSuccess = resultEntry.aidBonus > 0;
+    }
 
     await RollRequestChat._updateMessage(message, rollType, resultEntry, flags, {
       targetActorId: route.targetActorId,
@@ -424,14 +443,8 @@ export class ApplyRoll {
     // Aid scoring is a pure function of the total, so an applied roll is scored
     // exactly as a rolled one would be.
     if (rollType === "aid" || rollType === "multiAid" || rollType === "targetedAid") {
-      if (entry.total >= 10) {
-        const uncapped = game.settings.get(MODULE_ID, "uncap-aid-another");
-        entry.aidBonus = 2 + (uncapped ? Math.floor((entry.total - 10) / 5) : 0);
-        entry.aidSuccess = true;
-      } else {
-        entry.aidBonus = 0;
-        entry.aidSuccess = false;
-      }
+      entry.aidBonus = aidBonusFor(entry.total);
+      entry.aidSuccess = entry.aidBonus > 0;
     }
 
     return entry;

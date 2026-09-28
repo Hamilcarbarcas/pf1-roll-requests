@@ -10,6 +10,11 @@
     <div class="arr-flavor">{{flavor}}</div>
     {{/if}}
 
+    {{! GM-only: what the Distance / Not Visible terms were measured against (SUBJECT-SPEC §7) }}
+    {{#if subjectName}}
+    <div class="arr-subject-line gm-only"><i class="fa-solid fa-crosshairs"></i> {{localize "RR.Subject.CardLine" name=subjectName}}</div>
+    {{/if}}
+
     {{! Optional caller-supplied HTML slot (API: description). Rendered raw and visible to everyone. }}
     {{#if description}}
     <div class="arr-description">{{{description}}}</div>

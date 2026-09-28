@@ -1489,6 +1489,68 @@
   flex: 0 0 auto;
 }
 
+/* ---- Subject (SUBJECT-SPEC) ---- */
+
+.arr-card .arr-subject-line {
+  color: #666;
+  padding: 0 4px 2px;
+  font-size: 11px;
+}
+
+.arr-card .arr-subject-line i {
+  margin-right: 3px;
+}
+
+.roll-request-dialog .arr-subject-control {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.roll-request-dialog .arr-subject-chip-slot:empty {
+  display: none;
+}
+
+.roll-request-dialog .arr-subject-control button {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.roll-request-dialog .arr-subject-chip {
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 1px;
+  border: 1px solid var(--color-border-light-tertiary, #b5b3a4);
+  border-radius: 12px;
+}
+
+.roll-request-dialog .arr-subject-chip img {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.roll-request-dialog .arr-subject-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+
+.roll-request-dialog .arr-subject-clear {
+  flex: 0 0 auto;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.roll-request-dialog .arr-subject-clear:hover {
+  opacity: 1;
+}
+
 /* ---- Picker window ---- */
 
 .arr-apply-picker {
