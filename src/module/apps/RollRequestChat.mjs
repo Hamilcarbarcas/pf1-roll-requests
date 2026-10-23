@@ -12,6 +12,7 @@ import { ApplyRollPicker } from "./ApplyRollPicker.mjs";
 import { opposedOutcome } from "./OpposedCheck.mjs";
 import { joinTerms, subjectFor, subjectModifiers } from "../subject.mjs";
 import { aidBonusFor } from "../house-rules.mjs";
+import { displayName, rollOptionsFor } from "../sub-options.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -481,7 +482,7 @@ export class RollRequestChat {
    * @returns {object}
    */
   static _templateData(flags) {
-    const requestName = flags.request.name;
+    const requestName = displayName(flags.request);
     // The title names the check, the flavor line carries the prose. Titling the
     // card with the flavor instead printed the same string twice, and on a
     // targeted card — which has no "Roll <check>" prompt of its own — it left
@@ -504,7 +505,7 @@ export class RollRequestChat {
       // beside its name — otherwise an opposed card would show two portraits
       // with no hint which half of the contest each one is rolling.
       targetedActors: (flags.targetedActors ?? []).map(t =>
-        t.check?.name ? { ...t, checkLabel: t.check.name } : t),
+        t.check?.name ? { ...t, checkLabel: displayName(t.check) } : t),
       isSaveRequest: flags.isSaveRequest ?? false,
       isSelection: flags.selectFromTable ?? false,
       targetsOnly: flags.targetsOnly ?? false,
@@ -1646,6 +1647,10 @@ export class RollRequestChat {
       const override = currentFlags.targetedActors?.find(t => t.id === targetActorId)?.check;
       if (override) request = override;
     }
+    // Aiding is its own DC 10 check, not the use being aided (SUB-OPTIONS-SPEC §5).
+    if (rollType === "aid" || rollType === "targetedAid" || rollType === "multiAid") {
+      request = { ...request, tags: [] };
+    }
     const dc = currentFlags.dc;
 
     // --- Acquire actor and tokenId based on roll type ---
@@ -1953,6 +1958,7 @@ export class RollRequestChat {
     const opts = {
       skipDialog: false,
       chatMessage: false,
+      ...rollOptionsFor(request),
       ...extraOpts,
     };
     if (dc != null) opts.dc = dc;
@@ -2001,6 +2007,7 @@ export class RollRequestChat {
     const opts = {
       skipDialog,
       chatMessage: false,
+      ...rollOptionsFor(request),
     };
     if (dc != null) opts.dc = dc;
 

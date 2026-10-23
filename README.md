@@ -29,6 +29,7 @@ The dialog lets you select:
   - **Ignore aid requirement** — By default an aider must themselves be able to succeed on the check to aid. Tick this to let anyone attempt Aid Another regardless (also implied by *Allow un-passable checks*).
 - **Flavor text** — Optional line shown on the chat card beneath the title. The title itself always names the check being rolled.
 - **Subject** — Perception and Spellcraft only. The token the check is about; see below.
+- **Sub-options** – With a module that supplies them, a save or skill tile has a small arrow: hover it, or right-click to keep the list open, to request a use ("Acrobatics, to jump") or what a save is against ("against fear"). Clicking the tile itself is a plain check. Rolls carry the choice, so bonuses aimed at it apply, and the card title names it.
 
 #### Subject (Perception / Spellcraft)
 

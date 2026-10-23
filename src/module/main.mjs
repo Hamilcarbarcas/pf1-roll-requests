@@ -16,6 +16,7 @@ import { OPPOSED_SUMMARY_KEY, opposedSummary } from "./apps/OpposedCheck.mjs";
 import { SocketHandler } from "./SocketHandler.mjs";
 import { HOUSE_RULES_SETTING, LEGACY_UNCAP_SETTING, migrateLegacySetting, spellcraftDC } from "./house-rules.mjs";
 import { normalizeSubject, takesSubject } from "./subject.mjs";
+import { normalizeTags, registerSubOptions, unregisterSubOptions } from "./sub-options.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -30,6 +31,10 @@ Hooks.once("init", () => {
   game.pf1RollRequests.registerQuickAction = registerQuickAction;
   game.pf1RollRequests.unregisterQuickAction = unregisterQuickAction;
   game.pf1RollRequests.getQuickActions = getQuickActions;
+
+  // Public API for a check's sub-options: skill uses, save categories (SUB-OPTIONS-SPEC §2).
+  game.pf1RollRequests.registerSubOptions = registerSubOptions;
+  game.pf1RollRequests.unregisterSubOptions = unregisterSubOptions;
 
   // Public API for registering card summary formatters (live aggregate displays).
   game.pf1RollRequests.registerSummary = RollRequestChat.registerSummary;
@@ -306,6 +311,7 @@ function resolveTargetedActors(targetedActors) {
     // A per-target check override needs a display name like the card's own
     // request does; resolve it here so callers may pass { type, key } alone.
     if (entry.check && !entry.check.name) entry.check.name = resolveCheckName(entry.check);
+    if (entry.check) entry.check.tags = normalizeTags(entry.check.tags);
     // A row's own subject (SUBJECT-SPEC §3.1), stored in the one shape.
     if (Object.hasOwn(entry, "subject")) entry.subject = normalizeSubject(entry.subject);
   }
@@ -456,7 +462,7 @@ async function buildRequestData(options, { embedded = false } = {}) {
     rollMode,
     flavor,
     includeAid,
-    request: { type, key, name },
+    request: { type, key, name, tags: normalizeTags(options.tags) },
     description,
     resultTable,
     showTable,

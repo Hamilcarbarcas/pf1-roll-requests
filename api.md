@@ -29,7 +29,7 @@ Seedable fields, all optional:
 | `rollMode` | `"roll"`, `"gmroll"`, `"publicblind"`, `"blindroll"` |
 | `flavor` | string |
 | `includeAid`, `ignoreAidRequirement`, `allowUnpassable` | booleans |
-| `selectedRequest` | `{ type, key, name }` — the check itself |
+| `selectedRequest` | `{ type, key, name, tags }` — the check itself; `tags` are [sub-options](#sub-options) |
 | `targetedActors` | see below |
 | `subject` | a token uuid, TokenDocument or Token; see [Subjects](#subjects-distance). Not remembered between opens |
 
@@ -65,6 +65,7 @@ game.pf1RollRequests.createRequest({
   rollMode: "roll",     // "roll", "gmroll", "publicblind", or "blindroll" (default: "roll")
   flavor: "Diplomacy",  // optional flavor text
   includeAid: true,     // include Aid Another section (default: true; forced off for saves and dice)
+  tags: ["gatherInfo"], // sub-option ids from the registered provider (see Sub-options)
   awaitResult: true,    // return a Promise with the roll result (single mode only)
   onResult: (payload) => {},  // streaming callback fired on every roll (any mode; best for "multi")
 });
@@ -440,6 +441,44 @@ The actor-passing modes are mutually ordered: `promptActors` (show picker) takes
 - The `callback` may be async; it is awaited, and the dialog is closed afterward only if `closeOnUse` is `true` (you can also call `app.close()` yourself at any time).
 - Registered actions appear in **Configure Roll Options** and can be hidden there like the built-ins.
 - `game.pf1RollRequests.unregisterQuickAction(key)` removes one; `game.pf1RollRequests.getQuickActions()` returns the current list.
+
+## Sub-options
+
+A check can carry **sub-options**: what a skill check is for ("Acrobatics, to jump") or
+what a save is against ("Will, against fear and poison"). The roll is made with them, so
+a bonus aimed at that use or category applies. Roll Requests owns no list of them; one
+module per request type registers a **provider** that does.
+
+```js
+game.pf1RollRequests.registerSubOptions({
+  id: "my-mod",
+  types: ["save", "skill"],
+  // The sub-options one check offers; [] means none.
+  options: (type, key) => [{ id: "jump", label: "Jump", group: "Uses" }],
+  // Optional: several at once (true) or one (false, the default).
+  multiple: (type) => type === "save",
+  // Optional: the ids a long list shows before "All tags…".
+  common: (type, key) => ["fear", "poison"],
+  // Optional: a full selector behind "All tags…"; resolves to ids, or null.
+  pick: async (type, key, current) => [...current],
+  // Required: options merged into rollSkill / rollSavingThrow when the check is rolled.
+  rollOptions: (type, key, ids) => ({ myTags: ids }),
+  // Optional: ids implied by the card an auto-save request was made from.
+  forMessage: (message) => [],
+});
+```
+
+- One provider per type; registering another for the same type replaces it with a
+  console warning. `game.pf1RollRequests.unregisterSubOptions(id)` removes one.
+- Register at `setup` or later.
+- In the request dialog, a tile whose check has sub-options gets a small arrow. Hovering
+  opens a list beside it, right-clicking keeps it open; clicking the tile itself is the
+  plain check. Skills pick one; with `multiple`, ticks stay open for several.
+- `createRequest({ tags })` and a targeted row's `check: { type, key, tags }` take ids
+  directly. Ids the provider no longer offers are dropped from the dialog's remembered
+  selection.
+- Card titles name them: "Acrobatics (Jump)", "Will (against Fear, Poison)".
+- Aid Another rolls never carry them. Apply Roll matches on the check alone.
 
 ## Card Summaries (live aggregates)
 

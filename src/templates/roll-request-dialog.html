@@ -127,7 +127,7 @@
                     {{#each this.groups as |label key|}}
                     <div class="request-option{{#if (and @root.selectedRequest (eq @root.selectedRequest.key key))}} selected{{/if}}"
                          data-type="{{../id}}" data-key="{{key}}" data-action="selectOption">
-                        {{label}}
+                        <span class="arr-option-label">{{label}}</span>
                     </div>
                     {{/each}}
                 {{/if}}

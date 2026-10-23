@@ -23,6 +23,7 @@
 import { RollRequestChat } from "./RollRequestChat.mjs";
 import { ActionCheckConfig } from "./ActionCheckConfig.mjs";
 import { ApplyRoll } from "./ApplyRoll.mjs";
+import { displayName, messageTags } from "../sub-options.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -142,6 +143,7 @@ export class SaveAutoRequest {
         key: saveType,
         name: saveName,
         dc: message.system.save.dc ?? null,
+        tags: messageTags(message),
       };
     }
 
@@ -320,7 +322,7 @@ export class SaveAutoRequest {
       // Nothing to roll: the card is the target list, its defenses and the token
       // controls. Suppresses the roll buttons and every bulk action that fires one.
       targetsOnly: descriptor.type === "none",
-      request: { type: descriptor.type, key: descriptor.key, name: descriptor.name },
+      request: { type: descriptor.type, key: descriptor.key, name: descriptor.name, tags: descriptor.tags ?? [] },
       dc: dc !== null ? Number(dc) : null,
       showDC: dc !== null,
       showResults: true,
@@ -498,8 +500,8 @@ export class SaveAutoRequest {
 
     const dc = state.dc;
     const label = dc != null
-      ? game.i18n.format("RR.Card.CheckButton", { name: state.request.name, dc })
-      : state.request.name;
+      ? game.i18n.format("RR.Card.CheckButton", { name: displayName(state.request), dc })
+      : displayName(state.request);
 
     const group = document.createElement("div");
     group.className = "card-buttons flexcol arr-check-buttons";

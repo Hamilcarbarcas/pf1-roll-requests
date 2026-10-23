@@ -289,5 +289,9 @@
   "RR.OC.Notif.GMOnly": "Only the GM can request an opposed roll.",
   "RR.OC.Notif.ApiUnavailable": "The roll request API is unavailable.",
   "RR.OC.Notif.NeedTwo": "Assign a token to both sides first.",
-  "RR.OC.Notif.TwoOnly": "Both sides are taken — click one to free it."
+  "RR.OC.Notif.TwoOnly": "Both sides are taken — click one to free it.",
+  "RR.SubOptions.General": "General",
+  "RR.SubOptions.AllTags": "All tags…",
+  "RR.SubOptions.SaveName": "{name} (against {tags})",
+  "RR.SubOptions.CheckName": "{name} ({tags})"
 }

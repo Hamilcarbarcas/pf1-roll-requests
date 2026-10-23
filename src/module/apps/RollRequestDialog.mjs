@@ -3,6 +3,7 @@
 // ============================================================
 
 import { getQuickActions } from "../roll-options.mjs";
+import { attachSubOptions, refreshSubLines, tileName } from "./SubOptionFlyout.mjs";
 import { normalizeSubject, takesSubject } from "../subject.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -597,6 +598,9 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
     const el = this.element;
 
+    // Skill uses and save categories on the check tiles (SUB-OPTIONS-SPEC §4).
+    attachSubOptions(this);
+
     // Prompt Actors and the canvas preview share the same slot; which one is
     // shown depends on checkMode.
     const actorSelectionEl = el.querySelector(".arr-actor-selection");
@@ -713,13 +717,15 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   static #onSelectOption(_event, target) {
     const type = target.dataset.type;
     const key = target.dataset.key;
-    const name = target.textContent.trim();
+    const name = tileName(target);
 
     // Deselect all, then select clicked
     this.element.querySelectorAll(".request-option.selected").forEach(el => el.classList.remove("selected"));
     target.classList.add("selected");
 
-    this.selectedRequest = { type, key, name };
+    // Clicking the tile is the plain check; sub-options come from its flyout.
+    this.selectedRequest = { type, key, name, tags: [] };
+    refreshSubLines(this);
     this._syncAidCheckbox();
     this._syncSubjectControl();
   }
@@ -841,7 +847,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       allowUnpassable: this.allowUnpassable,
       isDMCheck,
       isTokenCheck,
-      request: this.selectedRequest,
+      request: { ...this.selectedRequest, tags: [...(this.selectedRequest.tags ?? [])] },
       // Sent only with a check it modifies; kept on the dialog otherwise.
       subject: takesSubject(this.selectedRequest) ? this.subject : null,
       rolledActors: {},
