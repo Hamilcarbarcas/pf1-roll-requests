@@ -12,7 +12,8 @@ import { ApplyRollPicker } from "./ApplyRollPicker.mjs";
 import { opposedOutcome } from "./OpposedCheck.mjs";
 import { joinTerms, subjectFor, subjectModifiers } from "../subject.mjs";
 import { aidBonusFor } from "../house-rules.mjs";
-import { displayName, rollOptionsFor } from "../sub-options.mjs";
+import { displayName, providerNotes, rollOptionsFor } from "../sub-options.mjs";
+import { bestModifier, notesContext, rollSpellcasting } from "../spellcasting.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -1901,7 +1902,7 @@ export class RollRequestChat {
     await RollRequestChat._showDiceSoNice(rollResult, currentFlags.rollMode);
 
     // Extract effect notes and footnotes
-    const notes = await RollRequestChat._getEffectNotes(actor, request);
+    const notes = await RollRequestChat._getEffectNotes(actor, request, rollResult);
 
     // Build the result entry
     const resultEntry = {
@@ -1973,6 +1974,8 @@ export class RollRequestChat {
       msg = await actor.rollSavingThrow(request.key, opts);
     } else if (request.type === "skill") {
       msg = await actor.rollSkill(request.key, opts);
+    } else if (request.type === "spellcasting") {
+      msg = await rollSpellcasting(actor, request.key, opts);
     } else if (request.type === "dice") {
       // Plain dice roll
       const roll = new Roll(request.key);
@@ -2025,6 +2028,8 @@ export class RollRequestChat {
       msg = await actor.rollSavingThrow(request.key, opts);
     } else if (request.type === "skill") {
       msg = await actor.rollSkill(request.key, opts);
+    } else if (request.type === "spellcasting") {
+      msg = await rollSpellcasting(actor, request.key, opts);
     } else if (request.type === "dice") {
       const formula = aidTotal > 0 ? `${request.key} + ${aidTotal}[Aid Another]` : request.key;
       const roll = new Roll(formula);
@@ -2072,6 +2077,10 @@ export class RollRequestChat {
       } else if (request.type === "save") {
         const save = actor.system?.attributes?.savingThrows?.[request.key];
         return save ? 20 + save.total : null;
+      } else if (request.type === "spellcasting") {
+        // The book is picked at roll time, so the best book decides feasibility.
+        const best = bestModifier(actor, request.key);
+        return best === null ? null : 20 + best;
       }
     } catch {
       return null;
@@ -2161,9 +2170,11 @@ export class RollRequestChat {
   // Get effect notes for a request type
   // ----------------------------------------------------------
 
-  static async _getEffectNotes(actor, request) {
+  static async _getEffectNotes(actor, request, roll = null) {
     try {
       if (typeof actor.getContextNotesParsed !== "function") return [];
+      // Notes a sub-options provider attached to the roll itself (SUB-OPTIONS-SPEC §6).
+      const extra = providerNotes(request, roll);
 
       let context;
       if (request.type === "skill") {
@@ -2172,12 +2183,14 @@ export class RollRequestChat {
         context = `savingThrow.${request.key}`;
       } else if (request.type === "ability") {
         context = `abilityChecks.${request.key}`;
+      } else if (request.type === "spellcasting") {
+        context = notesContext(actor, request.key);
       }
 
-      if (!context) return [];
+      if (!context) return extra;
 
       const notes = await actor.getContextNotesParsed(context);
-      return notes.map(n => n.text);
+      return [...notes.map(n => n.text), ...extra];
     } catch {
       return [];
     }
@@ -3469,7 +3482,7 @@ export class RollRequestChat {
       }
       if (!rollResult) continue;
 
-      const notes = await RollRequestChat._getEffectNotes(actor, flags.request);
+      const notes = await RollRequestChat._getEffectNotes(actor, flags.request, rollResult);
       const resultEntry = {
         tokenId: tokenDoc.id,
         actorId: actor.id,
@@ -3551,7 +3564,7 @@ export class RollRequestChat {
       }
       if (!rollResult) continue;
 
-      const notes = await RollRequestChat._getEffectNotes(actor, request);
+      const notes = await RollRequestChat._getEffectNotes(actor, request, rollResult);
       const resultEntry = {
         tokenId,
         actorId: actor.id,

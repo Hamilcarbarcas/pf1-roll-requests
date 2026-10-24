@@ -17,7 +17,7 @@ import {
 
 const OPEN_DELAY = 250;
 const CLOSE_DELAY = 200;
-const TYPES = ["save", "skill", "ability"];
+const TYPES = ["save", "skill", "ability", "spellcasting"];
 
 /** app → { el, tile, pinned, openTimer, closeTimer, onDoc, onKey } */
 const state = new WeakMap();

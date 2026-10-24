@@ -21,6 +21,8 @@ const providers = new Map();
  * @param {(type: string, key: string, current: string[]) => Promise<string[]|null>} [provider.pick]
  * @param {(type: string, key: string, ids: string[]) => object} provider.rollOptions
  * @param {(message: ChatMessage) => string[]} [provider.forMessage]
+ * @param {(type: string, key: string, roll: Roll) => string[]} [provider.notes] - Notes the roll's
+ *   tags produced, for the request card (the roll's own card is never posted).
  */
 export function registerSubOptions(provider) {
   if (!provider?.id || !Array.isArray(provider.types) || typeof provider.options !== "function") {
@@ -107,6 +109,13 @@ export function rollOptionsFor(check) {
   const tags = normalizeTags(check?.tags);
   if (!tags.length) return {};
   return call(check.type, "rollOptions", {}, check.type, check.key, tags);
+}
+
+/** Notes a provider attached to a rolled check (§6). */
+export function providerNotes(check, roll) {
+  if (!check?.type || !roll) return [];
+  const notes = call(check.type, "notes", [], check.type, check.key, roll);
+  return Array.isArray(notes) ? notes.filter((n) => typeof n === "string" && n) : [];
 }
 
 /** Tags a source card implies for a save request (§7). */

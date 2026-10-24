@@ -17,6 +17,7 @@
 import { RollRequestChat } from "./RollRequestChat.mjs";
 import { subjectFor, subjectModifiers } from "../subject.mjs";
 import { aidBonusFor } from "../house-rules.mjs";
+import { rememberBook } from "../spellcasting.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -43,7 +44,7 @@ export class ApplyRoll {
   static isApplicable(flags) {
     if (!flags?.request || flags.locked) return false;
     if (flags.selectFromTable) return false;
-    return ["skill", "save", "ability"].includes(flags.request.type);
+    return ["skill", "save", "ability", "spellcasting"].includes(flags.request.type);
   }
 
   /**
@@ -98,6 +99,7 @@ export class ApplyRoll {
     if (subject.skill) return { type: "skill", key: subject.skill };
     if (subject.save) return { type: "save", key: subject.save };
     if (subject.ability) return { type: "ability", key: subject.ability };
+    if (subject.core === "concentration" || subject.core === "cl") return { type: "spellcasting", key: subject.core };
     return null;
   }
 
@@ -420,7 +422,8 @@ export class ApplyRoll {
    */
   static async _buildEntry(flags, route, who, roll, sourceMessage, rollType) {
     const { actor } = who;
-    const notes = await RollRequestChat._getEffectNotes(actor, ApplyRoll.wantFor(flags, route));
+    rememberBook(actor, sourceMessage?.system?.subject?.spellbook);
+    const notes = await RollRequestChat._getEffectNotes(actor, ApplyRoll.wantFor(flags, route), roll);
 
     const entry = {
       tokenId: route.tokenId,

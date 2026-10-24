@@ -20,6 +20,7 @@ export const ROLL_CATEGORIES = [
   { id: "ability", text: "RR.Category.Ability" },
   { id: "save", text: "RR.Category.Save" },
   { id: "skill", text: "RR.Category.Skill" },
+  { id: "spellcasting", text: "RR.Category.Spellcasting" },
   { id: "dice", text: "RR.Category.Dice" },
   { id: "quick", text: "RR.Category.Quick" },
 ];

@@ -17,6 +17,7 @@ import { SocketHandler } from "./SocketHandler.mjs";
 import { HOUSE_RULES_SETTING, LEGACY_UNCAP_SETTING, migrateLegacySetting, spellcraftDC } from "./house-rules.mjs";
 import { normalizeSubject, takesSubject } from "./subject.mjs";
 import { normalizeTags, registerSubOptions, unregisterSubOptions } from "./sub-options.mjs";
+import { SPELLCASTING_KEYS, spellcastingName } from "./spellcasting.mjs";
 
 const MODULE_ID = "pf1-roll-requests";
 
@@ -281,6 +282,7 @@ Hooks.on("getSceneControlButtons", (controls) => {
  * @returns {string}
  */
 function resolveCheckName({ type, key }) {
+  if (type === "spellcasting") return spellcastingName(key);
   const table = type === "ability" ? pf1.config.abilities
     : type === "save" ? pf1.config.savingThrows
       : type === "skill" ? pf1.config.skills
@@ -345,9 +347,14 @@ async function buildRequestData(options, { embedded = false } = {}) {
     return null;
   }
 
-  const validTypes = ["ability", "save", "skill", "dice"];
+  const validTypes = ["ability", "save", "skill", "dice", "spellcasting"];
   if (!validTypes.includes(type)) {
     ui.notifications.error(game.i18n.format("RR.Notif.InvalidType", { type, types: validTypes.join(", ") }));
+    return null;
+  }
+
+  if (type === "spellcasting" && !SPELLCASTING_KEYS.includes(key)) {
+    ui.notifications.error(game.i18n.format("RR.Notif.InvalidType", { type: `spellcasting/${key}`, types: SPELLCASTING_KEYS.join(", ") }));
     return null;
   }
 
@@ -427,7 +434,7 @@ async function buildRequestData(options, { embedded = false } = {}) {
   const allowRepick = selectFromTable ? (options.allowRepick ?? false) : false;
 
   // Aid Another modifies a roll; a selection has none to modify.
-  const includeAid = (type === "dice" || type === "save" || selectFromTable)
+  const includeAid = (type === "dice" || type === "save" || type === "spellcasting" || selectFromTable)
     ? false
     : (options.includeAid ?? true);
   const targetedActors = options.targetedActors ?? [];
@@ -645,7 +652,7 @@ Hooks.once("ready", () => {
    * Programmatically create a roll request chat card.
    *
    * @param {object} options
-   * @param {string} options.type        - "ability", "save", "skill", or "dice". Optional when
+   * @param {string} options.type        - "ability", "save", "skill", "spellcasting", or "dice". Optional when
    *   `selectFromTable` is set (nothing is rolled), where it defaults to "dice".
    * @param {string} options.key         - The key for the check (e.g. "str", "ref", "per"). For
    *   type "dice" this is a roll formula — any valid one, not just a bare die ("2d6+2", "2d4-2").

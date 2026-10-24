@@ -4,6 +4,7 @@
 
 import { getQuickActions } from "../roll-options.mjs";
 import { attachSubOptions, refreshSubLines, tileName } from "./SubOptionFlyout.mjs";
+import { SPELLCASTING_KEYS, spellcastingName } from "../spellcasting.mjs";
 import { normalizeSubject, takesSubject } from "../subject.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -168,6 +169,11 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       { id: "ability", text: game.i18n.localize("RR.Category.Ability"), groups: abilities },
       { id: "save", text: game.i18n.localize("RR.Category.Save"), groups: saves },
       { id: "skill", text: game.i18n.localize("RR.Category.Skill"), groups: skills },
+      {
+        id: "spellcasting",
+        text: game.i18n.localize("RR.Category.Spellcasting"),
+        groups: Object.fromEntries(SPELLCASTING_KEYS.map(k => [k, spellcastingName(k)])),
+      },
       { id: "dice", text: game.i18n.localize("RR.Category.Dice"), groups: dice },
     ];
 
@@ -696,6 +702,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     if (!checkbox) return;
     const disableAid = this.checkMode === "dmcheck"
       || this.selectedRequest?.type === "save"
+      || this.selectedRequest?.type === "spellcasting"
       || this.selectedRequest?.type === "dice";
     checkbox.disabled = disableAid;
     const group = checkbox.closest(".form-group");
@@ -819,7 +826,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     // Force includeAid off for DM checks, and for dice-type and save-type requests
     const includeAid = isDMCheck
       ? false
-      : (this.selectedRequest.type === "dice" || this.selectedRequest.type === "save") ? false : this.includeAid;
+      : ["dice", "save", "spellcasting"].includes(this.selectedRequest.type) ? false : this.includeAid;
 
     // Selection Check requires at least one actor to be chosen
     if (this.checkMode === "selection" && this.targetedActors.length === 0) {

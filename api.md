@@ -49,7 +49,7 @@ Other modules or scripts can create roll requests programmatically:
 ```js
 // Basic request
 game.pf1RollRequests.createRequest({
-  type: "skill",  // "ability", "save", "skill", or "dice"
+  type: "skill",  // "ability", "save", "skill", "spellcasting", or "dice"
   key: "per",     // system key (e.g. "str", "ref", "per", "d20")
   dc: 15,
 });
@@ -442,6 +442,18 @@ The actor-passing modes are mutually ordered: `promptActors` (show picker) takes
 - Registered actions appear in **Configure Roll Options** and can be hidden there like the built-ins.
 - `game.pf1RollRequests.unregisterQuickAction(key)` removes one; `game.pf1RollRequests.getQuickActions()` returns the current list.
 
+## Spellcasting checks
+
+`type: "spellcasting"` with `key: "concentration"` or `key: "cl"` requests a concentration
+or caster level check. PF1 rolls both from a spellbook: an actor with one book in use rolls
+from it, one with several is asked which (the last choice is offered first), and one with
+none is told so and skipped. Aid Another is always off. The natural-20 gate uses the
+actor's best book.
+
+```js
+game.pf1RollRequests.createRequest({ type: "spellcasting", key: "concentration", dc: 17 });
+```
+
 ## Sub-options
 
 A check can carry **sub-options**: what a skill check is for ("Acrobatics, to jump") or
@@ -465,6 +477,8 @@ game.pf1RollRequests.registerSubOptions({
   rollOptions: (type, key, ids) => ({ myTags: ids }),
   // Optional: ids implied by the card an auto-save request was made from.
   forMessage: (message) => [],
+  // Optional: notes the roll's sub-options produced, shown on the request card.
+  notes: (type, key, roll) => [],
 });
 ```
 

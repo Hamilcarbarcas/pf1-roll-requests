@@ -293,5 +293,11 @@
   "RR.SubOptions.General": "General",
   "RR.SubOptions.AllTags": "All tags…",
   "RR.SubOptions.SaveName": "{name} (against {tags})",
-  "RR.SubOptions.CheckName": "{name} ({tags})"
+  "RR.SubOptions.CheckName": "{name} ({tags})",
+  "RR.Category.Spellcasting": "Spellcasting",
+  "RR.Spellcasting.Concentration": "Concentration",
+  "RR.Spellcasting.CasterLevel": "Caster Level",
+  "RR.Spellcasting.NoBooks": "{name} has no spellcasting to roll with.",
+  "RR.Spellcasting.PickTitle": "Choose Spellcasting",
+  "RR.Spellcasting.PickPrompt": "Which spellcasting does {name} roll with?"
 }

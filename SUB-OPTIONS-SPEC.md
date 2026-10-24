@@ -170,6 +170,15 @@ a GM who wants other tags makes a request from the dialog.
 Opposed Check and Monster Lore quick actions keep plain checks. Opposed uses (feint vs.
 Sense Motive) can come later through the same `tags` field.
 
+## §10 Spellcasting checks (2026-10-23)
+
+A `spellcasting` request type, keys `concentration` / `cl` (`src/module/spellcasting.mjs`),
+takes sub-options like skills do (single pick). Rolling it asks for a spellbook when the
+roller has more than one in use (DialogV2, one button per book, last pick preselected).
+Feasibility uses the best book; notes use the last book. Providers gained an optional
+`notes(type, key, roll)`, since a request roll's own card is never posted and notes that
+ride the roll would otherwise be lost.
+
 ## §9 Decisions
 
 1. Save flyout: `common` subset plus **All tags…** (§4.3); everything grouped only when a

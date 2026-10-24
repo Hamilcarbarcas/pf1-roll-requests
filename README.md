@@ -19,7 +19,7 @@ A GM-only dialog accessed via the dice button in the token controls toolbar, or 
 
 The dialog lets you select:
 
-- **Check type** — Ability checks, saving throws, skill checks, or raw dice
+- **Check type** — Ability checks, saving throws, skill checks, spellcasting (concentration and caster level checks), or raw dice. A spellcasting check asks which spellcasting to use when an actor has more than one
 - **Mode** — Single-check, multi-check, selection-check (prompt specific actors), token check (prompt your selected tokens), or DM check (auto-roll for your selected NPCs)
 - **DC** — Optional; can be shown or hidden from players
   - **Allow un-passable checks** — By default an actor who cannot reach the DC even on a natural 20 is blocked from rolling. Tick this to let them roll anyway (this also lifts the aid requirement below). Trained-only skills without ranks are still blocked (see below).
