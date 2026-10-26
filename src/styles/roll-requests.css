@@ -622,6 +622,43 @@
   color: #b94a48;
 }
 
+/* Amended results (amendResult): the original total struck, an icon per kind of
+   change. Pass/fail keeps the total's color; without a DC it takes the kind's. */
+
+.arr-amended {
+  --arr-amend-reroll: #b8860b;
+  --arr-amend-bonus: #2e7d32;
+  --arr-amend-penalty: #c62828;
+}
+
+.arr-amended .arr-amend-was {
+  font-size: 0.75em;
+  font-weight: normal;
+  opacity: 0.6;
+}
+
+.arr-amended .arr-amend-icon { font-size: 0.85em; }
+.arr-amended .arr-amend-icon.arr-amend-reroll { color: var(--arr-amend-reroll); }
+.arr-amended .arr-amend-icon.arr-amend-bonus { color: var(--arr-amend-bonus); }
+.arr-amended .arr-amend-icon.arr-amend-penalty { color: var(--arr-amend-penalty); }
+
+.arr-amended.arr-amend-reroll:not(.arr-pass, .arr-fail) .arr-total-value { color: var(--arr-amend-reroll); }
+.arr-amended.arr-amend-bonus:not(.arr-pass, .arr-fail) .arr-total-value { color: var(--arr-amend-bonus); }
+.arr-amended.arr-amend-penalty:not(.arr-pass, .arr-fail) .arr-total-value { color: var(--arr-amend-penalty); }
+
+.arr-roll-details .dice-rolls .roll.arr-amend-old {
+  text-decoration: line-through;
+  opacity: 0.45;
+}
+.arr-roll-details .dice-rolls .roll.arr-amend-new {
+  color: #b8860b;
+  font-weight: bold;
+}
+.arr-roll-details .tooltip-part.arr-amend-row.arr-amend-bonus .part-flavor,
+.arr-roll-details .tooltip-part.arr-amend-row.arr-amend-bonus .part-total { color: #2e7d32; font-weight: bold; }
+.arr-roll-details .tooltip-part.arr-amend-row.arr-amend-penalty .part-flavor,
+.arr-roll-details .tooltip-part.arr-amend-row.arr-amend-penalty .part-total { color: #c62828; font-weight: bold; }
+
 /* Aid Bonus */
 
 .arr-aid-bonus {

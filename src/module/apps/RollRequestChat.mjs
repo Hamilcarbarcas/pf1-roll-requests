@@ -2322,31 +2322,177 @@ export class RollRequestChat {
   }
 
   // ----------------------------------------------------------
+  // Amendments: a change made to a result after it was rolled (a reroll, or a
+  // bonus or penalty applied after the fact). Folded into the entry itself, so
+  // the total, pass/fail, result-table label and opposed winner all follow; the
+  // entry keeps `originalTotal` and an `amendments` list for the card's marks.
+  // ----------------------------------------------------------
+
+  /**
+   * Replace the result's d20 with a reroll: the old die's results go inactive
+   * (`rerolled`, which Foundry's breakdown already styles), the new die's
+   * results are appended. A kept original marks the new results discarded.
+   *
+   * @param {object} entry
+   * @param {{delta: number, reroll: {to: number, results: object[], kept?: string}}} amendment
+   * @returns {object} A patched copy.
+   */
+  static _rerollIntoResult(entry, amendment) {
+    const patched = { ...entry, total: (entry.total ?? 0) + (amendment.delta || 0) };
+    const kept = amendment.reroll?.kept === "original";
+    if (!kept && Number.isFinite(amendment.reroll?.to)) patched.naturalRoll = amendment.reroll.to;
+    if (!entry.rollData) return patched;
+
+    try {
+      const data = foundry.utils.deepClone(entry.rollData);
+      const term = data.terms?.[0];
+      if (Array.isArray(term?.results)) {
+        const fresh = foundry.utils.deepClone(amendment.reroll?.results ?? []);
+        if (kept) {
+          for (const r of fresh) Object.assign(r, { active: false, discarded: true });
+        } else {
+          for (const r of term.results) if (r.active) Object.assign(r, { active: false, rerolled: true });
+        }
+        term.results.push(...fresh);
+      }
+      data.total = patched.total;
+      patched.rollData = data;
+    } catch (err) {
+      console.error(`${MODULE_ID} | Could not fold a reroll into a result:`, err);
+    }
+    return patched;
+  }
+
+  /**
+   * One amendment applied to an entry.
+   *
+   * @param {object} entry
+   * @param {object} amendment  { id, kind: "reroll"|"bonus", delta, source: { name }, reroll? }
+   * @returns {object} The patched entry.
+   */
+  static _amendEntry(entry, amendment) {
+    const patched = amendment.kind === "reroll"
+      ? RollRequestChat._rerollIntoResult(entry, amendment)
+      : RollRequestChat._foldTermsIntoResult(entry, [{
+          value: Number(amendment.delta) || 0,
+          flavor: String(amendment.source?.name ?? "Bonus").replace(/[[\]]/g, ""),
+        }]);
+    return {
+      ...patched,
+      originalTotal: entry.originalTotal ?? entry.total,
+      amendments: [...(entry.amendments ?? []), amendment],
+    };
+  }
+
+  // Requests sent to the GM, awaiting its confirmation (requestId → resolve).
+  static _pendingAmendments = new Map();
+
+  /**
+   * Amend a recorded result from any client. The active GM writes; anyone else
+   * asks it over the socket and waits for the reply.
+   *
+   * @param {ChatMessage} message
+   * @param {string|null} slot
+   * @param {string} key - The result's key in rolledActors / actorResults.
+   * @param {object} amendment
+   * @returns {Promise<boolean>}
+   */
+  static async requestAmendment(message, slot, key, amendment) {
+    const record = { id: foundry.utils.randomID(), at: Date.now(), userId: game.user.id, ...amendment };
+    if (game.users.activeGM?.isSelf) return RollRequestChat.amendResult(message, slot, key, record);
+    if (!game.users.activeGM) {
+      ui.notifications.warn(game.i18n.localize("RR.Notif.AmendNoGM"));
+      return false;
+    }
+    const requestId = foundry.utils.randomID();
+    const reply = new Promise((resolve) => {
+      RollRequestChat._pendingAmendments.set(requestId, resolve);
+      setTimeout(() => {
+        if (RollRequestChat._pendingAmendments.delete(requestId)) resolve(false);
+      }, 8000);
+    });
+    game.socket.emit(`module.${MODULE_ID}`, {
+      action: "amendResult", requestId, messageId: message.id, slot: slot ?? null, key, amendment: record,
+    });
+    const ok = await reply;
+    if (!ok) ui.notifications.warn(game.i18n.localize("RR.Notif.AmendFailed"));
+    return ok;
+  }
+
+  /** The GM's reply to requestAmendment arrived. */
+  static _resolveAmendment(requestId, ok) {
+    const resolve = RollRequestChat._pendingAmendments.get(requestId);
+    if (!resolve) return;
+    RollRequestChat._pendingAmendments.delete(requestId);
+    resolve(!!ok);
+  }
+
+  /**
+   * GM side: fold one amendment into a result, in the message's update queue.
+   * An amendment already on the entry (same id) is a no-op, so a repeat
+   * delivery can't apply twice. `rollComplete` / `onResult` are not re-fired:
+   * consumers may already have acted on the result. `resultAmended` fires instead.
+   *
+   * @returns {Promise<boolean>}
+   */
+  static amendResult(message, slot, key, amendment) {
+    return RollRequestChat._queued(message, async () => {
+      const flags = RollRequestChat._readState(message, slot);
+      if (!flags?.request) return false;
+      const mapKey = flags.mode === "targeted" ? "actorResults" : "rolledActors";
+      const entry = flags[mapKey]?.[key];
+      if (!entry) return false;
+      if ((entry.amendments ?? []).some(a => a.id === amendment.id)) return true;
+
+      const result = RollRequestChat._amendEntry(entry, amendment);
+      const map = foundry.utils.deepClone(flags[mapKey]);
+      map[key] = result;
+      const updatedFlags = foundry.utils.mergeObject(foundry.utils.deepClone(flags), { [mapKey]: map });
+
+      const updateData = { [RollRequestChat._statePath(slot, mapKey)]: map };
+      if (!slot) updateData.content = await RollRequestChat._rebuildCardContent(updatedFlags);
+      await message.update(updateData);
+
+      Hooks.callAll("pf1RollRequests.resultAmended", {
+        messageId: message.id, slot, key, amendment, result, flags: updatedFlags,
+      });
+      return true;
+    }).catch((err) => {
+      console.error(`${MODULE_ID} | Amending a result failed:`, err);
+      return false;
+    });
+  }
+
+  // ----------------------------------------------------------
   // Update the ChatMessage with a new roll result
   // ----------------------------------------------------------
 
-  static async _updateMessage(message, rollType, resultEntry, _flags, opts = {}) {
-    // Serialize all updates to the same message. Without this, two roll results
-    // arriving close together (the GM socket dispatcher does not await its
-    // handlers) both read the same pre-update flags and the second write clobbers
-    // the first — aid bonuses overwrite instead of stacking. Chaining the work
-    // per-message forces each call to read state committed by the prior one.
+  /**
+   * Run `fn` after every write already queued for this message. Without this,
+   * two writes arriving close together (the GM socket dispatcher does not await
+   * its handlers) both read the same pre-update flags and the second clobbers
+   * the first — aid bonuses overwrite instead of stacking. Each queued call must
+   * read its flags inside `fn`, so it sees state committed by the prior one.
+   */
+  static async _queued(message, fn) {
     const prev = RollRequestChat._updateQueues.get(message.id) ?? Promise.resolve();
-    // The passed-in `flags` snapshot is stale once queued, so _applyUpdate
-    // re-reads fresh flags from the message at execution time. Swallow a prior
-    // failure so one bad update doesn't poison the chain for later rolls.
-    const next = prev
-      .catch(() => {})
-      .then(() => RollRequestChat._applyUpdate(message, rollType, resultEntry, opts));
+    // Swallow a prior failure so one bad update doesn't poison the chain.
+    const next = prev.catch(() => {}).then(fn);
     RollRequestChat._updateQueues.set(message.id, next);
     try {
-      await next;
+      return await next;
     } finally {
       // Drop the chain once idle so the Map doesn't grow unbounded.
       if (RollRequestChat._updateQueues.get(message.id) === next) {
         RollRequestChat._updateQueues.delete(message.id);
       }
     }
+  }
+
+  static async _updateMessage(message, rollType, resultEntry, _flags, opts = {}) {
+    // The passed-in `flags` snapshot is stale once queued, so _applyUpdate
+    // re-reads fresh flags from the message at execution time.
+    await RollRequestChat._queued(message, () => RollRequestChat._applyUpdate(message, rollType, resultEntry, opts));
   }
 
   static async _applyUpdate(message, rollType, resultEntry, opts = {}) {
@@ -2696,20 +2842,12 @@ export class RollRequestChat {
           const tableLabel = RollRequestChat._resolveEntryLabel(result, flags.resultTable);
           const shownTotal = tableLabel ?? result.total;
           const labelClass = tableLabel ? " arr-total-label" : "";
-          const totalHtml = hideTotalFromPlayers
+          const marks = RollRequestChat._amendMarks(result, flags.resultTable, hideTotalFromPlayers);
+          const totalHtml = marks.was + (hideTotalFromPlayers
             ? `<span class="arr-total-value${labelClass} gm-only">${shownTotal}</span><span class="arr-total-value arr-player-only">?</span>`
-            : `<span class="arr-total-value${labelClass}">${shownTotal}</span>`;
+            : `<span class="arr-total-value${labelClass}">${shownTotal}</span>`) + marks.icons;
 
-          // Render roll details
-          let rollDetailsHtml = "";
-          if (result.rollData) {
-            try {
-              const roll = Roll.fromData(result.rollData);
-              rollDetailsHtml = await roll.render();
-            } catch (err) {
-              console.warn(`${MODULE_ID} | Could not render targeted roll details:`, err);
-            }
-          }
+          const rollDetailsHtml = await RollRequestChat._renderRollDetails(result);
           let notesHtml = "";
           if (result.notes?.length) {
             notesHtml = `<div class="arr-notes">${result.notes.map(n => `<span class="arr-note-tag">${n}</span>`).join("")}</div>`;
@@ -2717,7 +2855,7 @@ export class RollRequestChat {
           const hasDetails = !!(rollDetailsHtml || notesHtml);
           const chevronHtml = hasDetails ? `<i class="fas fa-chevron-down arr-expand-icon${detailsClass}"></i>` : "";
 
-          inlineDiv.className = `arr-inline-result arr-result-total ${passClass}`;
+          inlineDiv.className = `arr-inline-result arr-result-total ${passClass}${marks.css}`;
           inlineDiv.innerHTML = `${totalHtml}${passFailHtml}${chevronHtml}`;
           inlineDiv.removeAttribute("style");
 
@@ -2824,6 +2962,91 @@ export class RollRequestChat {
     return `<i class="fas fa-arrow-right-to-bracket arr-applied-mark gm-only" title="${title}"></i>`;
   }
 
+  /** reroll | bonus | penalty */
+  static _amendKind(amendment) {
+    if (amendment.kind === "reroll") return "reroll";
+    return (Number(amendment.delta) || 0) < 0 ? "penalty" : "bonus";
+  }
+
+  /**
+   * Marks for an amended result: the original total struck before the total,
+   * one icon per kind of change after it (hover lists each), and the class that
+   * colors the total by the latest change. Empty strings for an unamended entry.
+   *
+   * @param {object} entry
+   * @param {object|null} resultTable
+   * @param {boolean} [gmOnly=false] - The total itself is GM-only here.
+   * @returns {{ css: string, was: string, icons: string }}
+   */
+  static _amendMarks(entry, resultTable, gmOnly = false) {
+    const list = entry?.amendments ?? [];
+    if (!list.length) return { css: "", was: "", icons: "" };
+    const ICONS = { reroll: "fa-rotate", bonus: "fa-circle-plus", penalty: "fa-circle-minus" };
+    const esc = (s) => foundry.utils.escapeHTML(String(s ?? ""));
+    const gm = gmOnly ? " gm-only" : "";
+
+    const original = RollRequestChat._resolveEntryLabel({ ...entry, total: entry.originalTotal }, resultTable)
+      ?? entry.originalTotal;
+    const describe = (a) => {
+      const source = a.source?.name ?? "";
+      if (a.kind === "reroll") {
+        const key = a.reroll?.kept === "original" ? "RR.Amend.RerollKept" : "RR.Amend.Reroll";
+        return game.i18n.format(key, { source, from: a.reroll?.from ?? "?", to: a.reroll?.to ?? "?" });
+      }
+      const d = Number(a.delta) || 0;
+      return game.i18n.format("RR.Amend.Bonus", { source, delta: d >= 0 ? `+${d}` : `${d}` });
+    };
+
+    const kinds = [...new Set(list.map(RollRequestChat._amendKind))];
+    const icons = kinds.map((k) => {
+      const lines = list.filter((a) => RollRequestChat._amendKind(a) === k).map((a) => esc(describe(a))).join("<br>");
+      return `<i class="fas ${ICONS[k]} arr-amend-icon arr-amend-${k}${gm}" data-tooltip-html="${esc(lines)}"></i>`;
+    }).join("");
+
+    return {
+      css: ` arr-amended arr-amend-${RollRequestChat._amendKind(list.at(-1))}`,
+      was: `<s class="arr-amend-was${gm}">${esc(original)}</s>`,
+      icons,
+    };
+  }
+
+  /**
+   * The expandable roll breakdown for a primary result. An amended one marks
+   * the struck die, the newest reroll's die, and each amendment's bonus row
+   * (they are the breakdown's last parts, folded in after any aid).
+   *
+   * @param {object} entry
+   * @returns {Promise<string>}
+   */
+  static async _renderRollDetails(entry) {
+    if (!entry?.rollData) return "";
+    let html;
+    try {
+      html = await Roll.fromData(entry.rollData).render();
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Could not render roll details:`, err);
+      return "";
+    }
+    const list = entry.amendments ?? [];
+    if (!list.length) return html;
+
+    const holder = document.createElement("div");
+    holder.innerHTML = html;
+    const parts = [...holder.querySelectorAll(".dice-tooltip .tooltip-part")];
+    const lastReroll = list.filter((a) => a.kind === "reroll").at(-1);
+    if (lastReroll && parts[0]) {
+      const dice = [...parts[0].querySelectorAll(".dice-rolls > li.roll")];
+      for (const li of dice) if (li.classList.contains("rerolled")) li.classList.add("arr-amend-old");
+      const fresh = lastReroll.reroll?.results?.length ?? 0;
+      for (const li of dice.slice(dice.length - fresh)) li.classList.add("arr-amend-new");
+    }
+    const bonuses = list.filter((a) => a.kind !== "reroll" && Number(a.delta));
+    parts.slice(parts.length - bonuses.length).forEach((row, n) => {
+      row.classList.add("arr-amend-row", `arr-amend-${RollRequestChat._amendKind(bonuses[n])}`);
+    });
+    return holder.innerHTML;
+  }
+
   static async _buildResultHTML(entry, dc, showResults, hideTotalFromPlayers = false, resultTable = null) {
     const passed = dc != null ? entry.total >= dc : null;
 
@@ -2839,15 +3062,7 @@ export class RollRequestChat {
     }
 
     // Render the roll details (formula + dice breakdown)
-    let rollDetailsHtml = "";
-    if (entry.rollData) {
-      try {
-        const roll = Roll.fromData(entry.rollData);
-        rollDetailsHtml = await roll.render();
-      } catch (err) {
-        console.warn(`${MODULE_ID} | Could not render roll details:`, err);
-      }
-    }
+    const rollDetailsHtml = await RollRequestChat._renderRollDetails(entry);
 
     // Build pass/fail icons — wrap in gm-only when results are hidden
     let passFailHtml = "";
@@ -2862,16 +3077,17 @@ export class RollRequestChat {
     }
 
     // When results are hidden, apply pass/fail coloring only in a gm-only wrapper
-    const totalClass = passed !== null && !showResults
+    const marks = RollRequestChat._amendMarks(entry, resultTable, hideTotalFromPlayers);
+    const totalClass = (passed !== null && !showResults
       ? `arr-result-total`
-      : `arr-result-total ${passed === true ? "arr-pass" : passed === false ? "arr-fail" : ""}`;
+      : `arr-result-total ${passed === true ? "arr-pass" : passed === false ? "arr-fail" : ""}`) + marks.css;
 
     // In publicblind mode the total is gm-only; players see a ? placeholder instead
     const shownTotal = tableLabel ?? entry.total;
     const labelClass = tableLabel ? " arr-total-label" : "";
-    const totalHtml = hideTotalFromPlayers
+    const totalHtml = marks.was + (hideTotalFromPlayers
       ? `<span class="arr-total-value${labelClass} gm-only">${shownTotal}</span><span class="arr-total-value arr-player-only">?</span>`
-      : `<span class="arr-total-value${labelClass}">${shownTotal}</span>`;
+      : `<span class="arr-total-value${labelClass}">${shownTotal}</span>`) + marks.icons;
 
     const hasDetails = rollDetailsHtml || notesHtml;
     const detailsClass = hideTotalFromPlayers ? " gm-only" : "";
@@ -2975,18 +3191,11 @@ export class RollRequestChat {
     }
 
     // Render the roll details
-    let rollDetailsHtml = "";
-    if (entry.rollData) {
-      try {
-        const roll = Roll.fromData(entry.rollData);
-        rollDetailsHtml = await roll.render();
-      } catch (err) {
-        console.warn(`${MODULE_ID} | Could not render roll details:`, err);
-      }
-    }
+    const rollDetailsHtml = await RollRequestChat._renderRollDetails(entry);
 
     const hasDetails = rollDetailsHtml || notesHtml;
     const showRollDetails = showTotal; // roll details are as sensitive as the total
+    const marks = showTotal ? RollRequestChat._amendMarks(entry, resultTable) : { css: "", was: "", icons: "" };
     li.innerHTML = `
       <div class="arr-result-row flexrow">
         <div class="arr-result-actor flexrow">
@@ -2994,8 +3203,8 @@ export class RollRequestChat {
           <span class="arr-actor-name">${entry.actorName}</span>
           ${RollRequestChat._appliedMarkHTML(entry)}
         </div>
-        <div class="arr-result-total ${passClass}">
-          ${showTotal ? `<span class="arr-total-value${labelClass}">${shownTotal}</span>` : '<span class="arr-total-value">?</span>'}
+        <div class="arr-result-total ${passClass}${marks.css}">
+          ${showTotal ? `${marks.was}<span class="arr-total-value${labelClass}">${shownTotal}</span>${marks.icons}` : '<span class="arr-total-value">?</span>'}
           ${passed === true ? '<i class="fas fa-check arr-pass-icon"></i>' : ""}
           ${passed === false ? '<i class="fas fa-times arr-fail-icon"></i>' : ""}
           ${hasDetails && showRollDetails ? '<i class="fas fa-chevron-down arr-expand-icon"></i>' : ""}
@@ -3224,15 +3433,8 @@ export class RollRequestChat {
     else if (passed === false) passFailHtml = '<i class="fas fa-times arr-fail-icon"></i>';
 
     // Render roll details
-    let rollDetailsHtml = "";
-    if (result.rollData && showTotal) {
-      try {
-        const roll = Roll.fromData(result.rollData);
-        rollDetailsHtml = await roll.render();
-      } catch (err) {
-        console.warn(`${MODULE_ID} | Could not render targeted roll details:`, err);
-      }
-    }
+    const rollDetailsHtml = showTotal ? await RollRequestChat._renderRollDetails(result) : "";
+    const marks = showTotal ? RollRequestChat._amendMarks(result, resultTable) : { css: "", was: "", icons: "" };
     let notesHtml = "";
     if (result.notes?.length && showTotal) {
       notesHtml = `<div class="arr-notes">${result.notes.map(n => `<span class="arr-note-tag">${n}</span>`).join("")}</div>`;
@@ -3244,8 +3446,8 @@ export class RollRequestChat {
     // card template, which this only ever fills the result half of.
     const appliedHtml = RollRequestChat._appliedMarkHTML(result);
 
-    inlineDiv.className = `arr-inline-result arr-result-total ${passClass}`;
-    inlineDiv.innerHTML = `${appliedHtml}${showTotal ? `<span class="arr-total-value${labelClass}">${shownTotal}</span>` : '<span class="arr-total-value">?</span>'}${passFailHtml}${chevronHtml}`;
+    inlineDiv.className = `arr-inline-result arr-result-total ${passClass}${marks.css}`;
+    inlineDiv.innerHTML = `${appliedHtml}${showTotal ? `${marks.was}<span class="arr-total-value${labelClass}">${shownTotal}</span>${marks.icons}` : '<span class="arr-total-value">?</span>'}${passFailHtml}${chevronHtml}`;
     inlineDiv.removeAttribute("style");
 
     // Inject roll details block after the actor row

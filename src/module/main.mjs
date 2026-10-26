@@ -1031,6 +1031,46 @@ Hooks.once("ready", () => {
       : { [`flags.${MODULE_ID}.embeds.-=${slot}`]: null });
     return msg;
   };
+
+  /**
+   * Change a recorded result after the fact: reroll its d20, or add a bonus or
+   * penalty. The change is folded into the result, so the card's total,
+   * pass/fail, result-table label and opposed winner follow it, and the row
+   * shows the original total struck through with an icon per kind of change.
+   *
+   * Callable from any client; the active GM makes the write (a player's call
+   * waits for its reply, up to 8 s). `rollComplete` and `onResult` do NOT fire
+   * again, since consumers may already have acted on the original result;
+   * `pf1RollRequests.resultAmended` fires with `{ messageId, slot, key,
+   * amendment, result, flags }`.
+   *
+   * @example Reroll
+   * await game.pf1RollRequests.amendResult(message, {
+   *   key: tokenId,                 // rolledActors key, or actorResults key on a targeted card
+   *   amendment: {
+   *     kind: "reroll",
+   *     delta: -7,                  // new total minus old
+   *     source: { name: "Good Fortune" },
+   *     reroll: { from: 16, to: 9, results: [{ result: 9, active: true }], kept: "new" },
+   *   },
+   * });
+   * @example Bonus
+   * await game.pf1RollRequests.amendResult(message, {
+   *   slot: "my-embed", key, amendment: { kind: "bonus", delta: 3, source: { name: "Timely Inspiration" } },
+   * });
+   *
+   * @param {ChatMessage|string} message
+   * @param {object} target
+   * @param {string|null} [target.slot=null] - Embed slot, or null for the card itself.
+   * @param {string} target.key
+   * @param {object} target.amendment - { kind: "reroll"|"bonus", delta, source: { name }, reroll? }
+   * @returns {Promise<boolean>} True once the card carries the change.
+   */
+  game.pf1RollRequests.amendResult = async (message, { slot = null, key, amendment } = {}) => {
+    const msg = resolveMessage(message);
+    if (!msg || !key || !amendment?.kind) return false;
+    return RollRequestChat.requestAmendment(msg, slot || null, key, amendment);
+  };
 });
 
 // Clean up pending result promises and streaming callbacks when a card is deleted.

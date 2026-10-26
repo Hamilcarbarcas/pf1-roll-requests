@@ -97,6 +97,10 @@ If the slot already holds a result, you're asked before it's replaced. Where a c
 
 Requests that roll a raw formula and selection requests take no applied roll — neither has a check type to match against.
 
+#### Amended Results
+
+Another module can change a result after it was rolled — a reroll such as Good Fortune, or a bonus applied after the fact — through [`amendResult`](api.md#amending-a-result). The row's total, pass/fail, and result-table label update to match. The original total stays beside the new one, struck through, with an icon for each kind of change: gold for a reroll, green for a bonus, red for a penalty. Hover an icon to see each change. Expanding the row shows the old die struck through and the new one highlighted, with each bonus listed under the item that gave it. Effects already applied from the original result are not redone.
+
 **Settings → Module Settings → Delete Roll After Applying** additionally deletes the roll's original chat message once it has been applied. Off by default: the delete can't be undone, and that message is the only record of a roll the players watched happen. It runs only after the result is recorded, so a cancelled apply never removes anything.
 
 ### Auto Save Requests

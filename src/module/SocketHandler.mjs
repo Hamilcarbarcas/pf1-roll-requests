@@ -17,12 +17,21 @@ export class SocketHandler {
   }
 
   static async _onMessage(data) {
+    // The GM's reply to an amendment this client asked for.
+    if (data.action === "amendResultDone") {
+      if (data.userId === game.user.id) RollRequestChat._resolveAmendment(data.requestId, data.ok);
+      return;
+    }
+
     // Only the GM processes roll results (to avoid race conditions)
     if (!game.user.isGM) return;
 
     switch (data.action) {
       case "rollResult":
         await SocketHandler._handleRollResult(data);
+        break;
+      case "amendResult":
+        await SocketHandler._handleAmendResult(data);
         break;
       default:
         console.warn(`${MODULE_ID} | Unknown socket action: ${data.action}`);
@@ -45,5 +54,13 @@ export class SocketHandler {
     }
 
     await RollRequestChat._updateMessage(message, rollType, resultEntry, flags, { targetActorId, isRepick, slot });
+  }
+
+  // One GM answers: a second one replying would race the first's write.
+  static async _handleAmendResult({ requestId, messageId, slot = null, key, amendment }) {
+    if (!game.users.activeGM?.isSelf) return;
+    const message = game.messages.get(messageId);
+    const ok = message ? await RollRequestChat.amendResult(message, slot, key, amendment) : false;
+    game.socket.emit(`module.${MODULE_ID}`, { action: "amendResultDone", requestId, userId: amendment?.userId, ok });
   }
 }

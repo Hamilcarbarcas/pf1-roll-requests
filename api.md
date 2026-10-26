@@ -238,6 +238,37 @@ const candidates = game.pf1RollRequests.applyRollCandidates(requestMessage, null
 
 Returns the eligible source rolls for a request, best first — each `{ message, roll, actor, tokenDoc, route, playerOwned, appliedAlready }`. `route` describes the slot the roll would fill, including whether it is `occupied`. Useful for driving your own picker, or for auto-applying under conditions of your own.
 
+## Amending a result
+
+```js
+// Reroll a recorded result's d20 (Good Fortune and the like).
+await game.pf1RollRequests.amendResult(requestMessage, {
+  key: tokenId,                // the result's key: rolledActors, or actorResults on a targeted card
+  amendment: {
+    kind: "reroll",
+    delta: -7,                 // new total minus the current one
+    source: { name: "Good Fortune" },
+    reroll: { from: 16, to: 9, results: [{ result: 9, active: true }], kept: "new" },
+  },
+});
+
+// Add a bonus or penalty after the fact, here on an embedded request.
+await game.pf1RollRequests.amendResult(hostMessage, {
+  slot: "reflex", key, amendment: { kind: "bonus", delta: 3, source: { name: "Timely Inspiration" } },
+});
+```
+
+Changes a result that is already on the card. The change is folded into the entry itself, so the total, pass/fail, result-table label and opposed-check winner all follow it:
+
+- **`reroll`** replaces the stored roll's d20 term: the old die's results are kept but marked inactive (`rerolled`), and `reroll.results` (the new term's results) are appended. `kept: "original"` instead appends the new results as discarded, for a reroll that keeps the better or worse of the two. `naturalRoll` takes `reroll.to` unless the original was kept.
+- **`bonus`** appends a numeric term flavored with `source.name`, the same way banked aid is folded into an applied roll, so the expanded breakdown still adds up. A negative `delta` is a penalty.
+
+The entry gains `originalTotal` (the total before the first change) and `amendments`, the list of changes in order, each with an `id`, `at`, and `userId`. The row shows the original total struck through and an icon per kind of change (reroll, bonus, penalty), with each change listed on hover; the expanded breakdown strikes the old die and highlights the new one and each added row. Where the card hides totals from players, so do the marks.
+
+Callable from any client. The active GM makes the write, inside the per-message update queue; a player's call goes over the socket and waits up to 8 seconds for the reply. Resolves `true` once the card carries the change, `false` if the request, slot or result can't be found, or no GM answered. An amendment arriving twice (same `id`) is applied once.
+
+`rollComplete` and `onResult` are **not** fired again: a consumer may already have acted on the original result (applied a condition, rolled damage), and running it a second time could apply it twice. The [`pf1RollRequests.resultAmended`](#hook) hook fires instead, for consumers that want to react to a change.
+
 ## Custom formulas and result tables
 
 `type: "dice"` takes any valid roll formula as its `key`, not just a bare die:
@@ -621,3 +652,5 @@ By default the slot is removed outright — the counterpart to `closeRequest`, f
 ## Hook
 
 `pf1RollRequests.rollComplete` fires whenever a roll is completed on a request card, passing the message ID, the `slot` (`null` unless the roll was on an [embedded request](#embedded-requests)), roll type, result data, and updated flags.
+
+`pf1RollRequests.resultAmended` fires when a recorded result is [amended](#amending-a-result), passing `{ messageId, slot, key, amendment, result, flags }`, where `result` is the entry after the change. `rollComplete` does not fire for an amendment.
