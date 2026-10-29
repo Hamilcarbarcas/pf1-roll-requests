@@ -19,8 +19,11 @@ const providers = new Map();
  * @param {(type: string) => boolean} [provider.multiple]
  * @param {(type: string, key: string) => string[]} [provider.common]
  * @param {(type: string, key: string, current: string[]) => Promise<string[]|null>} [provider.pick]
- * @param {(type: string, key: string, ids: string[]) => object} provider.rollOptions
+ * @param {(type: string, key: string, ids: string[], details: {hidden: boolean}) => object} provider.rollOptions
+ *   `hidden`: the request keeps its tags off the cards (§11), so the roll should too.
  * @param {(message: ChatMessage) => string[]} [provider.forMessage]
+ * @param {(type: string, key: string, creature: {type: string|null, subtypes: string[]}) => string[]} [provider.forCreature]
+ *   Ids for a check about a creature: PF1 creature type and subtype keys (§11).
  * @param {(type: string, key: string, roll: Roll) => string[]} [provider.notes] - Notes the roll's
  *   tags produced, for the request card (the roll's own card is never posted).
  */
@@ -97,6 +100,7 @@ export function tagLabels(check) {
 /** "Acrobatics (Jump)", "Will (against Fear, Poison)". */
 export function displayName(check) {
   const name = check?.name ?? "";
+  if (check?.hideTags) return name;
   const labels = tagLabels(check);
   if (!labels.length) return name;
   return check.type === "save"
@@ -108,7 +112,12 @@ export function displayName(check) {
 export function rollOptionsFor(check) {
   const tags = normalizeTags(check?.tags);
   if (!tags.length) return {};
-  return call(check.type, "rollOptions", {}, check.type, check.key, tags);
+  return call(check.type, "rollOptions", {}, check.type, check.key, tags, { hidden: !!check.hideTags });
+}
+
+/** Ids for a check about a creature (§11); [] without a provider that knows creatures. */
+export function creatureTags(type, key, creature) {
+  return normalizeTags(call(type, "forCreature", [], type, key, creature));
 }
 
 /** Notes a provider attached to a rolled check (§6). */

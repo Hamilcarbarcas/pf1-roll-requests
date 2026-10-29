@@ -469,7 +469,7 @@ async function buildRequestData(options, { embedded = false } = {}) {
     rollMode,
     flavor,
     includeAid,
-    request: { type, key, name, tags: normalizeTags(options.tags) },
+    request: { type, key, name, tags: normalizeTags(options.tags), ...(options.hideTags ? { hideTags: true } : {}) },
     description,
     resultTable,
     showTable,

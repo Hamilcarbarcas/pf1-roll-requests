@@ -179,6 +179,20 @@ Feasibility uses the best book; notes use the last book. Providers gained an opt
 `notes(type, key, roll)`, since a request roll's own card is never posted and notes that
 ride the roll would otherwise be lost.
 
+## §11 Creatures and hidden tags (2026-10-27)
+
+Monster Lore's check is about a creature, and a provider can map a creature to ids (a
+Knowledge check identifying undead). Providers gained an optional
+`forCreature(type, key, { type, subtypes })`, PF1 creature type and subtype keys;
+`creatureTags()` calls it. Monster Lore passes the chosen type (kebab key to PF1's
+camelCase) and, when the reference monster is of that type, its subtypes.
+
+Naming the tag on the cards would tell players the type where the skill alone doesn't
+(Arcana covers constructs, dragons and magical beasts). A request field `hideTags` keeps
+`displayName` to the plain check name and reaches the provider as
+`rollOptions(type, key, ids, { hidden })`, so it can keep its own labels general too.
+Monster Lore sets it.
+
 ## §9 Decisions
 
 1. Save flyout: `common` subset plus **All tags…** (§4.3); everything grouped only when a

@@ -11,6 +11,8 @@
 //
 // Opened as a Quick Action from the Roll Request window (see roll-options.mjs).
 
+import { creatureTags } from "../sub-options.mjs";
+
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const MODULE_ID = "pf1-roll-requests";
@@ -181,6 +183,19 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
     if (render) this.render();
   }
 
+  /**
+   * The creature the checks are about, in PF1 keys: the chosen type, plus the
+   * reference monster's subtypes when it is of that type. Sub-option providers
+   * turn it into tags (SUB-OPTIONS-SPEC §11).
+   */
+  _creature() {
+    const type = this.monsterType.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    const actor = this.referenceActor;
+    const sameType = actor && readMonsterStats(actor).typeKey === this.monsterType;
+    const subtypes = sameType ? [...(actor.system?.traits?.creatureSubtypes?.standard ?? [])] : [];
+    return { type, subtypes };
+  }
+
   _skillName(skillKey) {
     return skillLabel(skillKey);
   }
@@ -298,6 +313,9 @@ export class MonsterLore extends HandlebarsApplicationMixin(ApplicationV2) {
     await api.createRequest({
       type: "skill",
       key: type.skill,
+      // The type's identify bonuses apply; the cards don't name it.
+      tags: creatureTags("skill", type.skill, this._creature()),
+      hideTags: true,
       dc,
       mode: "multi",
       includeAid: false,

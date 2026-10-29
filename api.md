@@ -505,9 +505,12 @@ game.pf1RollRequests.registerSubOptions({
   // Optional: a full selector behind "All tags…"; resolves to ids, or null.
   pick: async (type, key, current) => [...current],
   // Required: options merged into rollSkill / rollSavingThrow when the check is rolled.
-  rollOptions: (type, key, ids) => ({ myTags: ids }),
+  // details.hidden: the request keeps its tags off the cards (hideTags).
+  rollOptions: (type, key, ids, details) => ({ myTags: ids }),
   // Optional: ids implied by the card an auto-save request was made from.
   forMessage: (message) => [],
+  // Optional: ids for a check about a creature, given PF1 creature type and subtype keys.
+  forCreature: (type, key, { type: creatureType, subtypes }) => [],
   // Optional: notes the roll's sub-options produced, shown on the request card.
   notes: (type, key, roll) => [],
 });
@@ -523,6 +526,10 @@ game.pf1RollRequests.registerSubOptions({
   directly. Ids the provider no longer offers are dropped from the dialog's remembered
   selection.
 - Card titles name them: "Acrobatics (Jump)", "Will (against Fear, Poison)".
+  `createRequest({ hideTags: true })` leaves them off the title and tells the provider
+  (`details.hidden`), for checks whose tags would give something away.
+- Monster Lore requests carry `forCreature`'s ids for the chosen type (and the reference
+  monster's subtypes), hidden.
 - Aid Another rolls never carry them. Apply Roll matches on the check alone.
 
 ## Card Summaries (live aggregates)

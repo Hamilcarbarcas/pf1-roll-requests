@@ -178,6 +178,8 @@ A GM-only window (opened from the **Monster Lore** Quick Action) for running a K
 
 The type selects the relevant Knowledge skill — Arcana (constructs, dragons, magical beasts), Dungeoneering (aberrations, oozes), Local (humanoids), Nature (animals, fey, monstrous humanoids, plants, vermin), The Planes (outsiders), Religion (undead). **Request Knowledge Checks** then fires a **public multi-check** (Aid Another off); DC = rarity base (5/10/15) + CR (fractional CRs count as 1), hidden from players while results are public.
 
+With a sub-options provider that knows creatures (see [api.md](api.md#sub-options)), the request also carries the creature's type and the reference monster's subtypes, so bonuses on identifying that kind of creature apply. The cards don't name the type.
+
 The card shows a live **"Questions earned"** tally (via the card-summary system): each passing check earns 1 question, +1 per full 5 by which it beats the DC, tallied across the party as results come in.
 
 #### Opposed Check
