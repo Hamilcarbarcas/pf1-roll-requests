@@ -111,6 +111,8 @@
   "RR.Dialog.TokenCheckHint": "Prompts the tokens you have selected on the canvas.",
   "RR.Dialog.MultiCheck": "Multi-Check",
   "RR.Dialog.DMCheck": "DM Check",
+  "RR.Dialog.PromptRecipients": "Prompt recipients",
+  "RR.Dialog.PromptRecipientsHint": "Selection and Token Check only. Opens the roll dialog for each recipient's player as soon as the card is posted, as though they had clicked Roll. Rows only you can roll are not prompted.",
   "RR.Dialog.QuickOptionsTitle": "{label} — Options",
   "RR.Dialog.DC": "DC",
   "RR.Dialog.Show": "Show",

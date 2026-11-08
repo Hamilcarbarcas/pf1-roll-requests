@@ -28,7 +28,7 @@ Seedable fields, all optional:
 | `showDC`, `showResults` | booleans |
 | `rollMode` | `"roll"`, `"gmroll"`, `"publicblind"`, `"blindroll"` |
 | `flavor` | string |
-| `includeAid`, `ignoreAidRequirement`, `allowUnpassable` | booleans |
+| `includeAid`, `ignoreAidRequirement`, `allowUnpassable`, `promptRecipients` | booleans |
 | `selectedRequest` | `{ type, key, name, tags }` — the check itself; `tags` are [sub-options](#sub-options) |
 | `targetedActors` | see below |
 | `subject` | a token uuid, TokenDocument or Token; see [Subjects](#subjects-distance). Not remembered between opens |
@@ -81,6 +81,7 @@ const message = await game.pf1RollRequests.createRequest({
   flavor: "Massive Damage Save",
   targetedActors: [{ id: tokenDoc.id }],
   autoRoll: false,      // true = roll every target immediately, GM-side, no dialogs
+  prompt: false,        // true = open each target's roll dialog for its player as the card posts
 });
 
 // After setting any pending-result tracking, you can auto-roll all targets:
@@ -163,6 +164,8 @@ game.pf1RollRequests.createRequest({
 `game.pf1RollRequests.bulkRollTargeted(message)` rolls all pending targets on a targeted card without a dialog, exactly like the Roll All button. Call it after any pending-result bookkeeping is in place. Pass `{ slot }` as a second argument to roll an [embedded request](#embedded-requests) instead of the card itself, and `{ which: "npcs" }` to skip every character-type actor and every target an active player owns — what the card's **Roll NPCs** button does.
 
 Passing `autoRoll: true` to `createRequest` does the same thing one step earlier — the card is posted and every target rolled before the call resolves, so the returned message's flags already carry the full results. Use `bulkRollTargeted` instead when you need to do something between posting the card and rolling it. Both are GM-side and dialog-free: the rolls execute on the GM's client regardless of who owns the token, which is also what **Roll All** does.
+
+`prompt: true` is the player-side counterpart: when the card is posted, each row's player gets that row's roll dialog straight away, as though they had clicked its button. The dialog opens even for a player with **Skip Roll Dialog** on, since they did not start the roll. Each row prompts one player: the token's active owner, or for an actor row (no `tokenUUID`) the connected user whose character it is. A row no connected player can roll prompts nobody, and is left for the GM's button or **Roll NPCs**. A player offline when the card goes up is not prompted later; they roll from the card as usual. Ignored, with a console warning, outside `mode: "targeted"` or alongside `autoRoll`.
 
 ## Closing requests
 

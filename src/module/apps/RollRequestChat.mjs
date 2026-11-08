@@ -557,6 +557,55 @@ export class RollRequestChat {
   }
 
   // ----------------------------------------------------------
+  // Prompted requests: open the roll on each recipient's client as though they
+  // had clicked their row's button.
+  // ----------------------------------------------------------
+
+  /**
+   * The one player prompted for a targeted row, or null when no player is.
+   *
+   * Mirrors the permission check in _handleRoll so the prompt never goes to
+   * someone the roll would then refuse: a token row belongs to its owners, an
+   * actor row (Selection Check) to the user whose configured character it is.
+   * One user per row, so a token two players own opens one dialog, not two
+   * racing for the same slot; `activeOwner` is the same pick every client makes.
+   * A row only the GM can roll prompts nobody: that is what Roll NPCs is for.
+   *
+   * @param {object} entry - A targetedActors entry.
+   * @returns {User|null}
+   */
+  static _promptedUser(entry) {
+    if (entry.tokenUUID) {
+      const owner = fromUuidSync(entry.tokenUUID)?.actor?.activeOwner;
+      return owner && !owner.isGM ? owner : null;
+    }
+    return game.users.find(u => u.active && !u.isGM && u.character?.id === entry.id) ?? null;
+  }
+
+  /**
+   * createChatMessage, on every client: when a prompted request is posted, roll
+   * this user's rows through the same path as their row buttons. Runs on
+   * creation only, so a reload or re-render never prompts again; a player who
+   * was offline when it went up rolls from the card as usual.
+   *
+   * The dialog always opens, whatever Skip Roll Dialog says: the player didn't
+   * start this roll, so skipping would roll for them before they saw it. Rows
+   * are taken one at a time, so several of a player's tokens queue their
+   * dialogs rather than stacking them.
+   *
+   * @param {ChatMessage} message
+   */
+  static async onCreateChatMessage(message) {
+    const flags = message.flags?.[MODULE_ID];
+    if (!flags?.prompt || flags.mode !== "targeted" || game.user.isGM) return;
+
+    for (const entry of flags.targetedActors ?? []) {
+      if (!RollRequestChat._promptedUser(entry)?.isSelf) continue;
+      await RollRequestChat._handleRoll(message, flags, "targeted", { targetActorId: entry.id, skipDialog: false });
+    }
+  }
+
+  // ----------------------------------------------------------
   // Hook: renderChatMessage — bind interactivity to the card
   // ----------------------------------------------------------
 
@@ -3660,10 +3709,9 @@ export class RollRequestChat {
     const flags = RollRequestChat._readState(message, slot);
     if (!flags?.isSaveRequest || flags.targetsOnly) return;
 
+    const queue = [];
     for (const target of (flags.targetedActors || [])) {
-      const currentFlags = RollRequestChat._readState(message, slot);
-      if (!currentFlags) break;
-      if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
+      if ((flags.usedActorIds || []).includes(target.id)) continue;
 
       const tokenDoc = fromUuidSync(target.tokenUUID);
       const actor = tokenDoc?.actor;
@@ -3674,32 +3722,65 @@ export class RollRequestChat {
         const playerOwned = game.users.some(u => u.active && !u.isGM && actor.testUserPermission(u, "OWNER"));
         if (playerOwned) continue;
       }
-
-      let rollResult;
-      try {
-        rollResult = await RollRequestChat._performRoll(actor, flags.request, flags.dc, { skipDialog: true });
-      } catch (err) {
-        console.error(`${MODULE_ID} | Bulk save roll error for ${actor.name}:`, err);
-        continue;
-      }
-      if (!rollResult) continue;
-
-      const notes = await RollRequestChat._getEffectNotes(actor, flags.request, rollResult);
-      const resultEntry = {
-        tokenId: tokenDoc.id,
-        actorId: actor.id,
-        resultKey: target.id,
-        actorName: actor.name,
-        actorImg: actor.img,
-        total: rollResult.total,
-        formula: rollResult.formula,
-        naturalRoll: rollResult.dice?.[0]?.results?.[0]?.result ?? null,
-        rollData: rollResult.toJSON(),
-        notes,
-      };
-
-      await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id, slot });
+      queue.push({ target, tokenDoc, actor });
     }
+
+    const expected = queue.map(({ target, tokenDoc, actor }) =>
+      RollRequestChat._expectedRoll(flags.request, actor, tokenDoc, target.id));
+    await RollRequestChat._expectDice(expected, displayName(flags.request), async () => {
+      for (const { target, tokenDoc, actor } of queue) {
+        const currentFlags = RollRequestChat._readState(message, slot);
+        if (!currentFlags) break;
+        if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
+
+        let rollResult;
+        try {
+          rollResult = await RollRequestChat._performRoll(actor, flags.request, flags.dc, { skipDialog: true });
+        } catch (err) {
+          console.error(`${MODULE_ID} | Bulk save roll error for ${actor.name}:`, err);
+          continue;
+        }
+        if (!rollResult) continue;
+
+        const notes = await RollRequestChat._getEffectNotes(actor, flags.request, rollResult);
+        const resultEntry = {
+          tokenId: tokenDoc.id,
+          actorId: actor.id,
+          resultKey: target.id,
+          actorName: actor.name,
+          actorImg: actor.img,
+          total: rollResult.total,
+          formula: rollResult.formula,
+          naturalRoll: rollResult.dice?.[0]?.results?.[0]?.result ?? null,
+          rollData: rollResult.toJSON(),
+          notes,
+        };
+
+        await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id, slot });
+      }
+    });
+  }
+
+  // ----------------------------------------------------------
+  // PF1 Manual Rolls: a bulk roll asks for all of its dice in one prompt
+  // before the loop starts. Without that module, the loop just runs.
+  // ----------------------------------------------------------
+
+  static async _expectDice(expected, title, fn) {
+    const expect = game.pf1ManualRolls?.expect;
+    if (typeof expect !== "function" || !expected.length) return fn();
+    return expect(expected, fn, { title });
+  }
+
+  static _expectedRoll(request, actor, tokenDoc, key) {
+    const kinds = { save: "save", skill: "skill", ability: "ability", spellcasting: "caster", dice: "other" };
+    return {
+      key: `rr:${key}`,
+      label: tokenDoc?.name ?? actor.name,
+      kind: kinds[request?.type] ?? "other",
+      formula: request?.type === "dice" ? request.key : "1d20",
+      match: { token: tokenDoc?.id ?? undefined, actor: actor.id },
+    };
   }
 
   // ----------------------------------------------------------
@@ -3724,10 +3805,9 @@ export class RollRequestChat {
       return;
     }
 
+    const queue = [];
     for (const target of initialFlags.targetedActors) {
-      const currentFlags = RollRequestChat._readState(message, slot);
-      if (!currentFlags) break;
-      if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
+      if ((initialFlags.usedActorIds || []).includes(target.id)) continue;
 
       // Resolve actor: use tokenUUID when present (handles unlinked tokens).
       let actor, tokenId, rollerDoc = null;
@@ -3747,41 +3827,52 @@ export class RollRequestChat {
         const playerOwned = game.users.some(u => u.active && !u.isGM && actor.testUserPermission(u, "OWNER"));
         if (playerOwned) continue;
       }
-
-      // Honour a row's own check, as the per-row button does.
-      const request = target.check ?? initialFlags.request;
-      const subjectMods = subjectModifiers({
-        check: request,
-        subject: subjectFor(initialFlags, target.id),
-        tokenDoc: rollerDoc,
-        actor,
-      });
-
-      let rollResult;
-      try {
-        rollResult = await RollRequestChat._performRoll(actor, request, initialFlags.dc, { skipDialog: true }, subjectMods.terms);
-      } catch (err) {
-        console.error(`${MODULE_ID} | Bulk roll error for ${actor.name}:`, err);
-        continue;
-      }
-      if (!rollResult) continue;
-
-      const notes = await RollRequestChat._getEffectNotes(actor, request, rollResult);
-      const resultEntry = {
-        tokenId,
-        actorId: actor.id,
-        resultKey: target.id,
-        actorName: actor.name,
-        actorImg: actor.img,
-        total: rollResult.total,
-        formula: rollResult.formula,
-        naturalRoll: rollResult.dice?.[0]?.results?.[0]?.result ?? null,
-        rollData: rollResult.toJSON(),
-        notes,
-        distance: subjectMods.distance,
-      };
-
-      await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id, slot });
+      queue.push({ target, actor, tokenId, rollerDoc });
     }
+
+    const expected = queue.map(({ target, actor, rollerDoc }) =>
+      RollRequestChat._expectedRoll(target.check ?? initialFlags.request, actor, rollerDoc, target.id));
+    await RollRequestChat._expectDice(expected, displayName(initialFlags.request), async () => {
+      for (const { target, actor, tokenId, rollerDoc } of queue) {
+        const currentFlags = RollRequestChat._readState(message, slot);
+        if (!currentFlags) break;
+        if ((currentFlags.usedActorIds || []).includes(target.id)) continue;
+
+        // Honour a row's own check, as the per-row button does.
+        const request = target.check ?? initialFlags.request;
+        const subjectMods = subjectModifiers({
+          check: request,
+          subject: subjectFor(initialFlags, target.id),
+          tokenDoc: rollerDoc,
+          actor,
+        });
+
+        let rollResult;
+        try {
+          rollResult = await RollRequestChat._performRoll(actor, request, initialFlags.dc, { skipDialog: true }, subjectMods.terms);
+        } catch (err) {
+          console.error(`${MODULE_ID} | Bulk roll error for ${actor.name}:`, err);
+          continue;
+        }
+        if (!rollResult) continue;
+
+        const notes = await RollRequestChat._getEffectNotes(actor, request, rollResult);
+        const resultEntry = {
+          tokenId,
+          actorId: actor.id,
+          resultKey: target.id,
+          actorName: actor.name,
+          actorImg: actor.img,
+          total: rollResult.total,
+          formula: rollResult.formula,
+          naturalRoll: rollResult.dice?.[0]?.results?.[0]?.result ?? null,
+          rollData: rollResult.toJSON(),
+          notes,
+          distance: subjectMods.distance,
+        };
+
+        await RollRequestChat._updateMessage(message, "targeted", resultEntry, currentFlags, { targetActorId: target.id, slot });
+      }
+    });
   }
 }

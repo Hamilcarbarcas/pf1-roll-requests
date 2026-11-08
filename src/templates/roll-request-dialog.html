@@ -25,6 +25,10 @@
                     <input type="radio" name="checkMode" value="dmcheck" {{#if (eq checkMode "dmcheck")}}checked{{/if}} />
                     {{localize "RR.Dialog.DMCheck"}}
                 </label>
+                <label class="arr-suboption flexrow" title="{{localize "RR.Dialog.PromptRecipientsHint"}}">
+                    <input type="checkbox" id="arr-prompt-recipients" {{checked promptRecipients}} style="flex: 0 0 auto;" />
+                    <span>{{localize "RR.Dialog.PromptRecipients"}}</span>
+                </label>
             </fieldset>
 
             <!-- DC -->

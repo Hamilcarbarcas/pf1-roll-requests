@@ -221,6 +221,8 @@ Hooks.on("preCreateChatMessage", (message) => {
 Hooks.on("createChatMessage", (message) => {
   SaveAutoRequest.onCreateChatMessage(message)
     .catch((err) => console.error(`${MODULE_ID} | Could not route a save into its request:`, err));
+  RollRequestChat.onCreateChatMessage(message)
+    .catch((err) => console.error(`${MODULE_ID} | Could not prompt a roll request:`, err));
 });
 
 // ---- Inject skill/ability check options into the item-action sheet ----
@@ -677,6 +679,10 @@ Hooks.once("ready", () => {
    *   target GM-side without dialogs, exactly like the card's Roll All button. createRequest does
    *   not resolve until every target has rolled, so the returned message's flags are fully
    *   populated. Equivalent to calling game.pf1RollRequests.bulkRollTargeted() afterwards.
+   * @param {boolean} [options.prompt=false]      - Targeted mode only: when the card is posted, each
+   *   row's player gets its roll dialog straight away, as though they had clicked the row's button.
+   *   One player per row (the token's active owner, or for an actor row the user whose character it
+   *   is); rows no connected player can roll prompt nobody. Ignored with autoRoll.
    * @param {number|null} [options.dc=null]       - The DC (null for no DC). Forced to null when a
    *   resultTable is set, since a mapped label has no numeric pass/fail.
    * @param {boolean} [options.showDC=false]      - Whether the DC number is visible to players
@@ -785,6 +791,11 @@ Hooks.once("ready", () => {
       console.warn(`${MODULE_ID} | autoRoll ignored: a selection request has no roll to auto-fire.`);
     }
     const autoRoll = (mode === "targeted" && !selectFromTable) ? (options.autoRoll ?? false) : false;
+    // A prompt needs rows to open, and autoRoll has already rolled them.
+    if (options.prompt && (mode !== "targeted" || autoRoll)) {
+      console.warn(`${MODULE_ID} | prompt ignored: it needs mode "targeted" and no autoRoll.`);
+    }
+    if (options.prompt && mode === "targeted" && !autoRoll) requestData.prompt = true;
     const message = await RollRequestChat.createChatCard(requestData);
 
     // Streaming callback: invoked on every roll on this card (any mode). Lets

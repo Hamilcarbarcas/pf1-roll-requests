@@ -27,6 +27,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     this.includeAid = s?.includeAid ?? true;
     this.ignoreAidRequirement = s?.ignoreAidRequirement ?? false;
     this.allowUnpassable = s?.allowUnpassable ?? false;
+    this.promptRecipients = s?.promptRecipients ?? false;
     this.selectedRequest = s?.selectedRequest ?? null;
     this.targetedActors = s?.targetedActors ?? [];
     // Roll mode remembered when DM Check forces Private GM Roll, restored when
@@ -50,7 +51,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
   /** Fields `openDialog` may pre-fill. Mirrors what the constructor assigns. */
   static SEEDABLE = [
     "checkMode", "dc", "showDC", "showResults", "rollMode", "flavor",
-    "includeAid", "ignoreAidRequirement", "allowUnpassable",
+    "includeAid", "ignoreAidRequirement", "allowUnpassable", "promptRecipients",
     "selectedRequest", "targetedActors",
   ];
 
@@ -80,6 +81,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       includeAid: this.includeAid,
       ignoreAidRequirement: this.ignoreAidRequirement,
       allowUnpassable: this.allowUnpassable,
+      promptRecipients: this.promptRecipients,
       selectedRequest: this.selectedRequest,
       targetedActors: [...this.targetedActors],
     };
@@ -209,6 +211,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       includeAid: this.includeAid,
       ignoreAidRequirement: this.ignoreAidRequirement,
       allowUnpassable: this.allowUnpassable,
+      promptRecipients: this.promptRecipients,
       optionGroups,
       selectedRequest: this.selectedRequest,
       showSubject: takesSubject(this.selectedRequest),
@@ -645,6 +648,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
 
         syncActorSelectionVisibility();
         this._syncAidCheckbox();
+        this._syncPromptCheckbox();
       });
     });
 
@@ -668,6 +672,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       this._syncAidCheckbox();
     });
     el.querySelector("#arr-ignore-aid-req")?.addEventListener("change", (e) => { this.ignoreAidRequirement = e.currentTarget.checked; });
+    el.querySelector("#arr-prompt-recipients")?.addEventListener("change", (e) => { this.promptRecipients = e.currentTarget.checked; });
 
     // Actor checkboxes
     el.querySelectorAll(".arr-actor-checkbox").forEach(cb => {
@@ -694,7 +699,29 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     );
 
     this._syncAidCheckbox();
+    this._syncPromptCheckbox();
     this._refreshSubjectChip();
+  }
+
+  /**
+   * Whether the request about to be sent has a fixed set of recipients to
+   * prompt: a Selection or Token Check that posts a targeted card. A Selection
+   * Check of raw dice collapses to a single check (see #onRequestRoll), so it
+   * has no rows to prompt.
+   */
+  _canPromptRecipients() {
+    if (this.checkMode === "token") return true;
+    return this.checkMode === "selection" && this.selectedRequest?.type !== "dice";
+  }
+
+  /** Grey out "Prompt recipients" (keeping its state) where it can't apply. */
+  _syncPromptCheckbox() {
+    const checkbox = this.element?.querySelector("#arr-prompt-recipients");
+    if (!checkbox) return;
+    const disable = !this._canPromptRecipients();
+    checkbox.disabled = disable;
+    const label = checkbox.closest(".arr-suboption");
+    if (label) label.style.opacity = disable ? "0.4" : "";
   }
 
   _syncAidCheckbox() {
@@ -734,6 +761,7 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
     this.selectedRequest = { type, key, name, tags: [] };
     refreshSubLines(this);
     this._syncAidCheckbox();
+    this._syncPromptCheckbox();
     this._syncSubjectControl();
   }
 
@@ -852,6 +880,8 @@ export class RollRequestDialog extends HandlebarsApplicationMixin(ApplicationV2)
       // "Ignore aid requirement" only matters when aid is actually offered.
       ignoreAidRequirement: includeAid ? this.ignoreAidRequirement : false,
       allowUnpassable: this.allowUnpassable,
+      // Each recipient's client opens the roll for its own rows (onCreateChatMessage).
+      prompt: this.promptRecipients && this._canPromptRecipients(),
       isDMCheck,
       isTokenCheck,
       request: { ...this.selectedRequest, tags: [...(this.selectedRequest.tags ?? [])] },

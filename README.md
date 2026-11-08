@@ -54,6 +54,16 @@ To hide a player-owned NPC you don't want prompted, **right-click its row** and 
 
 Because the card is built from tokens rather than actors, unlinked duplicates of the same actor each get their own row and result, and each row can be rolled by whoever owns that token (the GM can roll any of them). Any token type is eligible, not just NPCs. Aid Another, the DC, and the roll mode all work exactly as they do for a Selection Check — the difference is only where the target list comes from. Cards are tagged `[Token Check]`.
 
+#### Prompt Recipients
+
+**Prompt recipients**, under the check modes, makes a Selection Check or Token Check open the roll for every recipient as soon as the card is posted, as though each player had clicked Roll on their row. It is greyed out in the other modes, which have no fixed set of recipients, and for a Selection Check of raw dice, which posts a single check.
+
+- Each row prompts one player: the token's owner on a Token Check, or the player whose configured character it is on a Selection Check.
+- PF1's roll dialog always opens, even for a player with **Skip Roll Dialog on Request Cards** on, so nobody's roll is made before they see it. Cancelling it leaves the row's button on the card to roll later.
+- A player with several rows gets their dialogs one after another.
+- Rows only the GM can roll, such as unowned NPCs, are not prompted; use the per-row button or **Roll NPCs**.
+- A player who is offline when the card is posted is not prompted on login, and rolls from the card as usual.
+
 #### Target Preview (Token Check / DM Check)
 
 Both canvas-driven modes show a read-only list in the slot the Prompt Actors checklist occupies, naming the tokens the request will go to — portrait and token name per row. **Token Check** lists every selected token; **DM Check** lists only the selected NPC tokens, which is the subset it will actually roll for. The list follows the canvas live, so selecting or deselecting tokens with the dialog open updates it immediately, and it reads *No tokens selected* when there is nothing to send to.
@@ -145,6 +155,7 @@ From a player's perspective the card is indistinguishable from a saving throw �
 - Each targeted token gets a compact row with their portrait, name, and a roll button.
 - **Roll All** — rolls the saving throw for every unrolled target, skipping the roll dialog. Present on every targeted card, not just auto-generated saves: selection, token and API-created cards get the same pair. (A one-target card keeps **Roll All** — the per-row button opens the roll dialog and this one never does — but drops **Roll NPCs**, which has nothing to partition.)
 - **Roll NPCs** — like Roll All, but skips any NPC token that an active player has ownership of (so player-owned creatures roll themselves).
+- With **[PF1 Manual Rolls](https://github.com/Hamilcarbarcas/pf1-manual-rolls)** on, **Roll All** and **Roll NPCs** ask for every target's dice in one prompt, one row per token, before rolling any of them.
 - **Select All / Select Passed / Select Failed** — canvas token-selection shortcuts that highlight the relevant tokens based on current results.
 - Hovering a target's portrait or name highlights that token on the canvas, the same way PF1's own target boxes do. Clicking the portrait selects it.
 - Clicking a target's **row** expands a collapsible dropdown. Before a roll it shows that creature's defenses; after a roll it shows the roll breakdown on top with the defenses below. Defenses include AC / touch / FF AC, CMD / flat-footed CMD, all three saving throws, plus spell resistance, damage reduction, energy resistance, active conditions, and any AC / CMD / save notes. The stats are labelled with the same icons PF1 uses in its target boxes — shield for AC, pointing hand for touch, shoe-prints for flat-footed, and PF1's own heart / arrow / brain for Fortitude / Reflex / Will. The two CMD stats take a leading fist to mark them out from AC, keeping PF1's shield and shoe-prints as their second glyph. Hover any of them for the full name. Each stat's glyph and value is coloured — red for AC, CMD and Fortitude, blue for touch AC and Will, green for flat-footed AC, flat-footed CMD and Reflex — with the AC row darkest and the saves row lightest, so a colour names the defense and its depth names the row.
