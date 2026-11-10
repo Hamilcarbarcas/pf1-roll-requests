@@ -493,6 +493,26 @@ async function buildRequestData(options, { embedded = false } = {}) {
   };
 }
 
+/**
+ * State for a target list with nothing to roll, built by the same function as
+ * the auto-request's "Replace All Target Lists" conversion so the two match.
+ *
+ * @param {object} options - `embed()` options; reads `targetedActors`, `name`, `autoExpand`.
+ * @returns {object|null}
+ */
+function buildTargetListData(options) {
+  const targetedActors = options.targetedActors ?? [];
+  if (!targetedActors.length) {
+    ui.notifications.error(game.i18n.localize("RR.Notif.TargetedNeedsActors"));
+    return null;
+  }
+  resolveTargetedActors(targetedActors);
+  const descriptor = { type: "none", key: "", name: options.name || game.i18n.localize("RR.Card.TargetsTitle") };
+  return SaveAutoRequest._buildState(descriptor, null, targetedActors, {
+    autoExpand: options.autoExpand ?? true,
+  });
+}
+
 /** Resolve a message argument that may be a document or an ID. */
 function resolveMessage(message) {
   return message?.id ? message : game.messages.get(message);
@@ -875,6 +895,12 @@ Hooks.once("ready", () => {
    * @param {(payload: object) => void} [options.onResult] - As `createRequest`,
    *   scoped to this slot and carrying it in the payload. In-memory on the
    *   creating client, so a reload drops it; the hook is the durable channel.
+   * @param {boolean} [options.targetsOnly=false] - A target list with nothing
+   *   to roll: the same rows, defenses dropdown and token controls as an
+   *   auto-converted attack card's list. Needs only `targetedActors`; check
+   *   options are ignored. `name` titles it (default "Targets").
+   * @param {boolean} [options.autoExpand=true] - With `targetsOnly`, whether a
+   *   sole target's defenses dropdown opens by itself.
    * @returns {Promise<ChatMessage|undefined>} The host message, or undefined if
    *   the request was rejected.
    */
@@ -892,7 +918,9 @@ Hooks.once("ready", () => {
     const slot = options.slot;
     if (!validateSlot(slot)) return;
 
-    const data = await buildRequestData(options, { embedded: true });
+    const data = options.targetsOnly
+      ? buildTargetListData(options)
+      : await buildRequestData(options, { embedded: true });
     if (!data) return;
 
     data.controls = options.controls ?? true;

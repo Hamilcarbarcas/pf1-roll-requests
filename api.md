@@ -638,6 +638,17 @@ Two options are its own:
 
 **`mount`** — a CSS selector, resolved against the message's rendered element on this module's own render hook, to place the widget without a host hook of your own. A convenience path only: it can only find containers that already exist by the time our hook runs, and it skips silently when nothing matches. **Hosts that draw their card from flags should use `renderEmbed`.**
 
+**`targetsOnly`** (default `false`). A target list with nothing to roll, the same widget **Replace All Target Lists** puts on a plain attack card: portrait rows, the defenses dropdown and the token controls, with no roll buttons. It needs only `targetedActors`; `type`, `key`, `dc` and the other check options are ignored. `name` titles it (default "Targets"), and `autoExpand` (default `true`) controls whether a sole target's defenses dropdown opens by itself. Useful for a host card that keeps its own target box away from the auto-conversion, such as a splash weapon's direct-hit section.
+
+```js
+await game.pf1RollRequests.embed(message, {
+  slot: "my-direct-target",
+  targetsOnly: true,
+  controls: false,
+  targetedActors: [{ id: tokenDoc.id }],
+});
+```
+
 ### Re-rendering
 
 A roll writes to `flags["pf1-roll-requests"].embeds.<slot>.actorResults` and stops. Foundry re-renders the message, the host's render hook fires, the host rebuilds its block and calls `renderEmbed` again. No content update, no second re-render, and the host's own state and the request's stay independent.
