@@ -17,6 +17,14 @@ import { bestModifier, notesContext, rollSpellcasting } from "../spellcasting.mj
 
 const MODULE_ID = "pf1-roll-requests";
 
+/** On a Party Tablets tablet, the owned actor whose tab is on screen; otherwise null. */
+function tabletTabActor() {
+  const view = game.modules.get("party-tablets")?.api?.currentView?.();
+  if (!view?.startsWith("actor:")) return null;
+  const actor = fromUuidSync(view.slice(6));
+  return actor?.isOwner ? actor : null;
+}
+
 export class RollRequestChat {
 
   // Pending result promises for awaitResult API (messageId → { resolve })
@@ -899,6 +907,7 @@ export class RollRequestChat {
     if (!type || !key) return;
 
     let actors = (canvas.tokens?.controlled ?? []).map(t => t.actor).filter(Boolean);
+    if (!actors.length && tabletTabActor()) actors = [tabletTabActor()];
     if (!actors.length && game.user.character) actors = [game.user.character];
     if (!actors.length) {
       ui.notifications.warn(game.i18n.localize("RR.Notif.SelectTokenFirst"));
@@ -1723,13 +1732,19 @@ export class RollRequestChat {
       if (!actor) { ui.notifications.warn(game.i18n.localize("RR.Notif.TargetNotFound")); return; }
     } else {
       // All other roll types use the currently controlled token.
-      const token = canvas.tokens.controlled[0];
+      // No canvas (Disable Game Canvas): nothing can be selected, so the configured actor always applies.
+      const token = canvas.tokens?.controlled?.[0];
+      const tabletActor = tabletTabActor();
       if (token) {
         actor = token.actor;
         if (!actor) { ui.notifications.warn(game.i18n.localize("RR.Notif.TokenNoActor")); return; }
         tokenId = token.id;
         rollerDoc = token.document;
-      } else if (game.settings.get(MODULE_ID, "use-configured-actor") && game.user.character) {
+      } else if (tabletActor) {
+        // A Party Tablets tablet rolls for the owned actor whose tab is on screen.
+        actor = tabletActor;
+        tokenId = actor.getActiveTokens?.()?.[0]?.id ?? actor.id;
+      } else if ((game.settings.get(MODULE_ID, "use-configured-actor") || !canvas.ready) && game.user.character) {
         // Nothing selected: fall back to the actor set in this user's configuration.
         actor = game.user.character;
         // Prefer an active token on the current scene for dedup; else key on the actor id.
@@ -1868,7 +1883,11 @@ export class RollRequestChat {
         // every other trained-only skill (and Knowledge above DC 10) still gates.
         const knowledgeUntrainedOk =
           RollRequestChat._isKnowledgeSkill(request.key) && dc != null && dc <= 10;
-        if (!knowledgeUntrainedOk) {
+        // A targeted row may lift the gate for its own actor (API: targetedActors[].allowUntrained),
+        // for a caller whose rules allow this check untrained in this case.
+        const rowUntrainedOk = rollType === "targeted"
+          && !!currentFlags.targetedActors?.find(t => t.id === targetActorId)?.allowUntrained;
+        if (!knowledgeUntrainedOk && !rowUntrainedOk) {
           ui.notifications.warn(
             game.i18n.format("RR.Notif.TrainedOnly", { name: actor.name, check: request.name })
           );

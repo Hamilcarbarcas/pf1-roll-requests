@@ -99,6 +99,7 @@ Each `targetedActors` entry requires only `id` (the token document ID). All othe
 | `img` | `tokenDoc.actor.img` (falls back to the token texture) | Show a different portrait |
 | `isHidden` | `tokenDoc.hidden` | Force a token visible or hidden on the card regardless of its canvas state |
 | `check` | the card's own `request` | Roll a **different check** on that row — `{ type, key }`, with `name` resolved from the key if omitted |
+| `allowUntrained` | `false` | Let this row's actor roll a trained-only skill without ranks. For a caller whose rules allow the check untrained in this case, such as Linguistics for a race's bonus languages |
 
 ### Per-row checks
 
